@@ -108,7 +108,7 @@ sealed class ComparisonOp(
 
     override val modName: String = "cmp"
     override val traitName: String = "PartialOrd"
-    override val itemName: String = "ord"
+    override val itemName: String = "partial_ord"
     override val fnName: String = "partial_cmp"
 
     companion object {

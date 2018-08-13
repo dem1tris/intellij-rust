@@ -8,11 +8,10 @@ package org.rust.ide.hints
 import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.lang.parameterInfo.*
 import com.intellij.openapi.util.TextRange
+import com.intellij.util.containers.nullize
 import org.rust.lang.core.psi.*
-import org.rust.lang.core.psi.ext.RsGenericDeclaration
-import org.rust.lang.core.psi.ext.ancestorStrict
-import org.rust.lang.core.psi.ext.elementType
-import org.rust.lang.core.psi.ext.typeParameters
+import org.rust.lang.core.psi.ext.*
+
 
 class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, RsGenericPresentation> {
 
@@ -65,8 +64,9 @@ class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, R
             else -> return null
         } as? RsGenericDeclaration ?: return null
         val typesWithBounds = genericDeclaration.typeParameters
+        val wherePreds = genericDeclaration.whereClause?.wherePredList?.toList().orEmpty()
         // one-element array for one-line hint
-        context.itemsToShow = arrayOf(RsGenericPresentation(typesWithBounds))
+        context.itemsToShow = arrayOf(RsGenericPresentation(typesWithBounds, wherePreds))
         return parameterList
     }
 
@@ -78,13 +78,22 @@ class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, R
 }
 
 class RsGenericPresentation(
-    private val params: List<RsTypeParameter>
+    private val params: List<RsTypeParameter>,
+    private val wherePreds: List<RsWherePred>
 ) {
-    // what if they all without names?
-    val presentText = params.joinToString { it ->
-        if (it.name != null)
-            it.name + (it.typeParamBounds?.text ?: "")
-        else
+    val presentText = params.joinToString { param ->
+        if (param.name != null) {
+            param.name +
+                (param.bounds.mapNotNull {
+                    val trait = it.bound.traitRef?.resolveToBoundTrait ?: return@mapNotNull null
+                    // if `T: ?Sized` then T doesn't have `Sized` bound
+                    // todo: check, understand
+                    if (!trait.element.isSizedTrait || param.isSized) {
+                        trait.element.identifier?.text
+                    } else null
+                }.nullize()?.joinToString(separator = " + ", prefix = ": ") ?: "")
+
+        } else
             ""
     }
 

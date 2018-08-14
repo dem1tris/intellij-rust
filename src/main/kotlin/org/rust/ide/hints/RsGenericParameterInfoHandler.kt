@@ -59,17 +59,17 @@ class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, R
         val parameterList = findExceptColonColon(context) ?: return null
         val parent = parameterList.parent
         val genericDeclaration = when (parent) {
-            is RsMethodCall -> parent.reference.resolve()
-            is RsPath -> parent.reference.resolve()
+            is RsMethodCall,
+            is RsPath -> parent.reference?.resolve()
             else -> return null
         } as? RsGenericDeclaration ?: return null
         val typesWithBounds = genericDeclaration.typeParameters
-        val wherePreds = genericDeclaration.whereClause?.wherePredList?.toList().orEmpty()
         // one-element array for one-line hint
-        context.itemsToShow = arrayOf(RsGenericPresentation(typesWithBounds, wherePreds))
+        context.itemsToShow = arrayOf(RsGenericPresentation(typesWithBounds))
         return parameterList
     }
 
+    // to avoid hint on :: before <>
     private fun findExceptColonColon(context: ParameterInfoContext?): RsTypeArgumentList? {
         val element = context?.file?.findElementAt(context.editor.caretModel.offset) ?: return null
         if (element.elementType == RsElementTypes.COLONCOLON) return null
@@ -77,25 +77,31 @@ class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, R
     }
 }
 
+/**
+ * Encapsulates text representation for parameter and ranges for highlighting
+ */
+
 class RsGenericPresentation(
-    private val params: List<RsTypeParameter>,
-    private val wherePreds: List<RsWherePred>
+    private val params: List<RsTypeParameter>
 ) {
-    val presentText = params.joinToString { param ->
+    val toText = params.map { param ->
         if (param.name != null) {
             param.name +
                 (param.bounds.mapNotNull {
                     val trait = it.bound.traitRef?.resolveToBoundTrait ?: return@mapNotNull null
-                    // if `T: ?Sized` then T doesn't have `Sized` bound
-                    // todo: check, understand
-                    if (!trait.element.isSizedTrait || param.isSized) {
-                        trait.element.identifier?.text
-                    } else null
+                    val elem = trait.element
+                    if (elem.isSizedTrait) {        // need to process `Sized` and `?Sized` separately
+                        if (it.q != null) "?"       // should manually append "?" if `?Sized`
+                        else return@mapNotNull null // type params `Sized` by default, so shouldn't show it
+                    } else {
+                        ""
+                    } + (elem.identifier?.text ?: return@mapNotNull null)
                 }.nullize()?.joinToString(separator = " + ", prefix = ": ") ?: "")
-
         } else
             ""
     }
+
+    val presentText = toText.joinToString()
 
     fun getRange(index: Int): TextRange {
         return if (index < 0 || index >= params.size)
@@ -104,16 +110,10 @@ class RsGenericPresentation(
             ranges[index]
     }
 
-    private val ranges: List<TextRange> = params.indices.map { it ->
-        calculateRange(it)
-    }
+    private val ranges: List<TextRange> = toText.indices.map { calculateRange(it) }
 
     private fun calculateRange(index: Int): TextRange {
-        val start = params.take(index).sumBy {
-            it.name?.length?.plus(it.typeParamBounds?.text?.length ?: 0)
-                ?.plus(2) ?: 0 // means plus ", "
-        }
-        return TextRange(start, start.plus(params[index].name?.length ?: 0)
-            .plus(params[index].typeParamBounds?.text?.length ?: 0))
+        val start = toText.take(index).sumBy { it.length + 2 } // plus ", "
+        return TextRange(start, start + toText[index].length)
     }
 }

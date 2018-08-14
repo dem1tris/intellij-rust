@@ -84,21 +84,57 @@ class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, R
 class RsGenericPresentation(
     private val params: List<RsTypeParameter>
 ) {
+    private val needQSizedBound = params.associate { param ->
+        val declaredSized = param.bounds.any {
+            it.bound.traitRef?.resolveToBoundTrait?.element?.isSizedTrait?.and(it.q == null) ?: TODO()
+        }
+        // declared `?Sized`
+        val declaredQSized = param.bounds.any {
+            it.bound.traitRef?.resolveToBoundTrait?.element?.isSizedTrait?.and(it.q != null) ?: TODO()
+        }
+        // one of supertraits is `Sized`
+        val derivedSized = param.bounds
+            // filter declared `Sized` and `?Sized`
+            .filter {
+                val trait = it.bound.traitRef?.resolveToBoundTrait ?: TODO()
+                trait.element.isSizedTrait.not()
+            }
+            .mapNotNull { it.bound.traitRef?.resolveToBoundTrait }
+            .flatMap { it.flattenHierarchy }
+            // supertraits doesn't contain `Sized`
+            .any { it.element.isSizedTrait }
+        // `?Sized` only valid when `Sized` neither declared nor is supertrait
+        val need = when {
+            !declaredSized && !derivedSized && declaredQSized -> true
+            else -> false
+        }
+        Pair(param, need)
+    }
+
+    /**
+     * Could use TyTypeParameter.named(p: RsTypeParameter)
+     * and getTraitBoundsTransitively(): Collection<BoundElement<RsTraitItem>>
+     * here, but if no `Sized` in Collection then impossible to determine
+     * whether `?Sized` was declared or implicit `Sized` should be applied
+     */
+
     val toText = params.map { param ->
-        if (param.name != null) {
-            param.name +
-                (param.bounds.mapNotNull {
-                    val trait = it.bound.traitRef?.resolveToBoundTrait ?: return@mapNotNull null
-                    val elem = trait.element
-                    if (elem.isSizedTrait) {        // need to process `Sized` and `?Sized` separately
-                        if (it.q != null) "?"       // should manually append "?" if `?Sized`
-                        else return@mapNotNull null // type params `Sized` by default, so shouldn't show it
-                    } else {
-                        ""
-                    } + (elem.identifier?.text ?: return@mapNotNull null)
-                }.nullize()?.joinToString(separator = " + ", prefix = ": ") ?: "")
-        } else
-            ""
+        param.name ?: return@map ""
+        val boundsTransitively =
+            param.bounds
+                .mapNotNull { it.bound.traitRef?.resolveToBoundTrait ?: return@mapNotNull null }
+                .flatMap { it.flattenHierarchy } // to show supertraits
+        val QSizedBound =
+            if (needQSizedBound[param] == true)
+                listOf("?Sized")
+            else
+                emptyList()
+        val allBounds = QSizedBound + boundsTransitively
+            // `?Sized`, if needed, in separate val, `Sized` shouldn't be shown
+            .filterNot { it.element.isSizedTrait }
+            .mapNotNull { it.element.identifier?.text ?: return@mapNotNull null }
+
+        param.name + (allBounds.nullize()?.joinToString(prefix = ": ", separator = " + ") ?: "")
     }
 
     val presentText = toText.joinToString()

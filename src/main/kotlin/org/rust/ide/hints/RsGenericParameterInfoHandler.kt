@@ -78,7 +78,7 @@ class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, R
 }
 
 /**
- * Encapsulates text representation for parameter and ranges for highlighting
+ * Stores the text representation and ranges for parameters
  */
 
 class RsGenericPresentation(
@@ -86,17 +86,17 @@ class RsGenericPresentation(
 ) {
     private val needQSizedBound = params.associate { param ->
         val declaredSized = param.bounds.any {
-            it.bound.traitRef?.resolveToBoundTrait?.element?.isSizedTrait?.and(it.q == null) ?: TODO()
+            it.bound.traitRef?.resolveToBoundTrait?.element?.isSizedTrait?.and(it.q == null) ?: false
         }
         // declared `?Sized`
         val declaredQSized = param.bounds.any {
-            it.bound.traitRef?.resolveToBoundTrait?.element?.isSizedTrait?.and(it.q != null) ?: TODO()
+            it.bound.traitRef?.resolveToBoundTrait?.element?.isSizedTrait?.and(it.q != null) ?: false
         }
         // one of supertraits is `Sized`
         val derivedSized = param.bounds
             // filter declared `Sized` and `?Sized`
             .filter {
-                val trait = it.bound.traitRef?.resolveToBoundTrait ?: TODO()
+                val trait = it.bound.traitRef?.resolveToBoundTrait ?: return@filter false
                 trait.element.isSizedTrait.not()
             }
             .mapNotNull { it.bound.traitRef?.resolveToBoundTrait }

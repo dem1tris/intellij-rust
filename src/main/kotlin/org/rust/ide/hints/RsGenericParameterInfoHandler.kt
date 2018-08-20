@@ -90,7 +90,7 @@ class RsGenericPresentation(
     val toText = params.map { param ->
         param.name ?: return@map ""
         val QSizedBound =
-            if (param.isSized)
+            if (!param.isSized)
                 listOf("?Sized")
             else
                 emptyList()

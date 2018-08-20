@@ -16,6 +16,8 @@ import org.rust.lang.core.psi.ext.*
 class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, RsGenericPresentation> {
 
     private var curParam = -1
+    var hintText = ""
+        private set
 
     override fun showParameterInfo(element: RsTypeArgumentList, context: CreateParameterInfoContext) {
         context.highlightedElement = null
@@ -36,9 +38,10 @@ class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, R
     }
 
     override fun updateUI(p: RsGenericPresentation, context: ParameterInfoUIContext) {
+        hintText = p.presentText
         context.currentParameterIndex
         context.setupUIComponentPresentation(
-            p.presentText,
+            hintText,
             p.getRange(curParam).startOffset,
             p.getRange(curParam).endOffset,
             false, // grayed

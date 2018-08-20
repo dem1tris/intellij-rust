@@ -40,7 +40,7 @@ class RsGenericParameterInfoHandlerTest : RsTestBase() {
             val items = createContext.itemsToShow ?: throw AssertionFailedError("Parameters are not shown")
             if (items.isEmpty()) throw AssertionFailedError("Parameters are empty")
             val context = MockParameterInfoUIContext(elt)
-            handler.updateUI(items[0] as RsArgumentsDescription, context)
+            handler.updateUI(items[0] as RsGenericPresentation, context)
             TestCase.assertEquals(hint, handler.hintText)
 
             // Check parameter index

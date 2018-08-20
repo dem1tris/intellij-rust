@@ -120,16 +120,15 @@ class RsGenericPresentation(
 
     val toText = params.map { param ->
         param.name ?: return@map ""
-        val boundsTransitively =
+        val declaredBounds =
             param.bounds
                 .mapNotNull { it.bound.traitRef?.resolveToBoundTrait ?: return@mapNotNull null }
-                .flatMap { it.flattenHierarchy } // to show supertraits
         val QSizedBound =
             if (needQSizedBound[param] == true)
                 listOf("?Sized")
             else
                 emptyList()
-        val allBounds = QSizedBound + boundsTransitively
+        val allBounds = QSizedBound + declaredBounds
             // `?Sized`, if needed, in separate val, `Sized` shouldn't be shown
             .filterNot { it.element.isSizedTrait }
             .mapNotNull { it.element.identifier?.text ?: return@mapNotNull null }

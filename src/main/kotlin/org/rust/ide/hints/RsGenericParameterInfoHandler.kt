@@ -87,40 +87,10 @@ class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, R
 class RsGenericPresentation(
     private val params: List<RsTypeParameter>
 ) {
-    // `?Sized` only valid when `Sized` is neither declared trait nor supertrait
-    private val needQSizedBound = params.associate { param ->
-        val declaredSized = param.bounds.any {
-            it.bound.traitRef?.resolveToBoundTrait?.element?.isSizedTrait?.and(it.q == null) ?: false
-        }
-        if (declaredSized) return@associate Pair(param, false)
-
-        // declared `?Sized`
-        val declaredQSized = param.bounds.any {
-            it.bound.traitRef?.resolveToBoundTrait?.element?.isSizedTrait?.and(it.q != null) ?: false
-        }
-        if (!declaredQSized) return@associate Pair(param, false)
-
-        // one of supertraits is `Sized`
-        val derivedSized = param.bounds
-            // filter declared `Sized` and `?Sized`
-            .filter {
-                val trait = it.bound.traitRef?.resolveToBoundTrait ?: return@filter false
-                trait.element.isSizedTrait.not()
-            }
-            .mapNotNull { it.bound.traitRef?.resolveToBoundTrait }
-            .flatMap { it.flattenHierarchy }
-            // supertraits contain `Sized`
-            .any { it.element.isSizedTrait }
-        if (derivedSized)
-            Pair(param, false)
-        else
-            Pair(param, true)
-    }
-
     val toText = params.map { param ->
         param.name ?: return@map ""
         val QSizedBound =
-            if (needQSizedBound[param] == true)
+            if (param.isSized)
                 listOf("?Sized")
             else
                 emptyList()

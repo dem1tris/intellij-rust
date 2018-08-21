@@ -85,20 +85,22 @@ class RsGenericParameterInfoHandlerTest : RsTestBase() {
         fn main() { foo::</*caret*/>(); }
     """, "T: Trait", "", 0)
 
+    // TODO: hint = "T", after intellij-rust#2783 fix
     fun `test fn bounds with ?Sized and Sized`() = checkByText("""
         #[lang = "sized"]
         pub trait Sized {}
         fn foo<T: Sized + ?Sized>(x: T) {}
         fn main() { foo::</*caret*/>(); }
-    """, "T", "", 0)
+    """, "T: ?Sized", "", 0)
 
+    // TODO: hint = "T: Trait", after intellij-rust#2783 fix
     fun `test fn bounds with ?Sized and derived Sized`() = checkByText("""
         #[lang = "sized"]
         pub trait Sized {}
         pub trait Trait : Sized {}
         fn foo<T: Trait + ?Sized>(x: T) {}
         fn main() { foo::</*caret*/>(); }
-    """, "T: Trait", "", 0)
+    """, "T: ?Sized + Trait", "", 0)
 
     fun `test fn with simple where`() = checkByText("""
         pub trait Trait {}

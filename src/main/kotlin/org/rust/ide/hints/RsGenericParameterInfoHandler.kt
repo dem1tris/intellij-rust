@@ -16,7 +16,8 @@ private const val WHERE_PREFIX = "where "
 
 class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, RsGenericPresentation> {
 
-    private var curParam = -1
+    var curParam = -1
+        private set
     var hintText = ""
         private set
 
@@ -71,7 +72,7 @@ class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, R
             is RsPath -> parent.reference?.resolve()
             else -> return null
         } as? RsGenericDeclaration ?: return null
-        val typesWithBounds = genericDeclaration.typeParameters
+        val typesWithBounds = genericDeclaration.typeParameters.nullize() ?: return null
         context.itemsToShow = listOfNotNull(
             RsGenericPresentation(typesWithBounds, false),
             RsGenericPresentation(typesWithBounds, true))
@@ -115,7 +116,7 @@ class RsGenericPresentation(
             param.name + (allBounds.nullize()?.joinToString(prefix = ": ", separator = " + ") ?: "")
         }
     } else {
-        val owner = params[0].parent?.parent as? RsGenericDeclaration
+        val owner = params.getOrNull(0)?.parent?.parent as? RsGenericDeclaration
         val wherePreds = owner?.whereClause?.wherePredList.orEmpty()
             // retain specific preds
             .filterNot {

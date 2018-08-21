@@ -12,6 +12,7 @@ import com.intellij.util.containers.nullize
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
 
+private const val WHERE_PREFIX = "where "
 
 class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, RsGenericPresentation> {
 
@@ -39,11 +40,15 @@ class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, R
 
     override fun updateUI(p: RsGenericPresentation, context: ParameterInfoUIContext) {
         hintText = p.presentText
-        context.currentParameterIndex
+        val (startOffset, endOffset) =
+            if (hintText.startsWith(WHERE_PREFIX))
+                0 to WHERE_PREFIX.length
+            else
+                p.getRange(curParam).startOffset to p.getRange(curParam).endOffset
         context.setupUIComponentPresentation(
             hintText,
-            p.getRange(curParam).startOffset,
-            p.getRange(curParam).endOffset,
+            startOffset,
+            endOffset,
             false, // grayed
             false,
             false, // define grayed part of args before highlight
@@ -67,8 +72,11 @@ class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, R
             else -> return null
         } as? RsGenericDeclaration ?: return null
         val typesWithBounds = genericDeclaration.typeParameters
-        // one-element array for one-line hint
-        context.itemsToShow = arrayOf(RsGenericPresentation(typesWithBounds))
+        context.itemsToShow = listOfNotNull(
+            RsGenericPresentation(typesWithBounds, false),
+            RsGenericPresentation(typesWithBounds, true))
+            .filterNot { it.presentText == "" }
+            .toTypedArray()
         return parameterList
     }
 
@@ -85,34 +93,54 @@ class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, R
  */
 
 class RsGenericPresentation(
-    private val params: List<RsTypeParameter>
+    private val params: List<RsTypeParameter>,
+    unrecognizedPartOfWhere: Boolean
 ) {
-    val toText = params.map { param ->
-        param.name ?: return@map ""
-        val QSizedBound =
-            if (!param.isSized)
-                listOf("?Sized")
-            else
-                emptyList()
-        val declaredBounds =
-            param.bounds
-                // `?Sized`, if needed, in separate val, `Sized` shouldn't be shown
-                .filterNot { it.bound.traitRef?.resolveToBoundTrait?.element?.isSizedTrait ?: true }
-                .mapNotNull { it.bound.traitRef?.path?.text }
-        val allBounds = QSizedBound + declaredBounds
-        param.name + (allBounds.nullize()?.joinToString(prefix = ": ", separator = " + ") ?: "")
+    val toText = if (!unrecognizedPartOfWhere) {
+        params.map { param ->
+            param.name ?: return@map ""
+            val QSizedBound =
+                if (!param.isSized)
+                    listOf("?Sized")
+                else
+                    emptyList()
+            val declaredBounds =
+                param.bounds
+                    // `?Sized`, if needed, in separate val, `Sized` shouldn't be shown
+                    .filter {
+                        it.bound.traitRef?.resolveToBoundTrait?.element?.isSizedTrait == false
+                    }
+                    .mapNotNull { it.bound.traitRef?.path?.text }
+            val allBounds = QSizedBound + declaredBounds
+            param.name + (allBounds.nullize()?.joinToString(prefix = ": ", separator = " + ") ?: "")
+        }
+    } else {
+        val owner = params[0].parent?.parent as? RsGenericDeclaration
+        val wherePreds = owner?.whereClause?.wherePredList.orEmpty()
+            // retain specific preds
+            .filterNot {
+                params.contains((it.typeReference?.typeElement as? RsBaseType)?.path?.reference?.resolve())
+            }
+        wherePreds.map { it.text }
     }
 
-    val presentText = toText.joinToString()
+    val presentText = toText.nullize()?.joinToString(
+        prefix = if (!unrecognizedPartOfWhere) "" else WHERE_PREFIX
+    ) ?: ""
 
     fun getRange(index: Int): TextRange {
-        return if (index < 0 || index >= params.size)
+        return if (index < 0 || index >= ranges.size)
             TextRange.EMPTY_RANGE
         else
             ranges[index]
     }
 
-    private val ranges: List<TextRange> = toText.indices.map { calculateRange(it) }
+    private val ranges: List<TextRange> =
+        if (!unrecognizedPartOfWhere) {
+            toText.indices.map { calculateRange(it) }
+        } else {
+            emptyList()
+        }
 
     private fun calculateRange(index: Int): TextRange {
         val start = toText.take(index).sumBy { it.length + 2 } // plus ", "

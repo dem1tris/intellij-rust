@@ -25,8 +25,7 @@ class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, R
         context.highlightedElement = null
         context.showHint(element, element.textRange.startOffset, this)
     }
-
-    // todo: check: cursor moving on around <, bulb still present without text, IDEA-197133
+    
     // todo: don't disappear in nested generic types
     override fun updateParameterInfo(parameterOwner: RsTypeArgumentList, context: UpdateParameterInfoContext) {
         curParam = ParameterInfoUtils.getCurrentParameterIndex(parameterOwner.node, context.offset, RsElementTypes.COMMA)

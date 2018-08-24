@@ -10,11 +10,12 @@ import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.codeInsight.lookup.LookupElementBuilder
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.patterns.ElementPattern
+import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiWhiteSpace
+import com.intellij.psi.TokenType
 import com.intellij.util.ProcessingContext
-import org.rust.lang.core.psi.RsPsiFactory
-import org.rust.lang.core.psi.RsStructItem
-import org.rust.lang.core.psi.ensureTrailingComma
-import org.rust.lang.core.psi.ext.namedFields
+import org.rust.lang.core.psi.*
+import org.rust.lang.core.psi.ext.*
 
 class RsSmartCompletionContributor : CompletionContributor() {
 
@@ -37,7 +38,34 @@ class RsSmartCompletionContributor : CompletionContributor() {
         if (parameters.completionType != CompletionType.SMART) return
         val psiFactory = RsPsiFactory(parameters.editor.project!!)
         val context = ProcessingContext()
+        val position = parameters.position
+        println(parameters.editor.document.text)
+        println(position.text)
         ProgressManager.checkCanceled()
+        when {
+            position.ancestorStrict<RsValueArgumentList>() != null
+            -> onValueArgumentList(position, context, result)
+
+            position.ancestorOrSelf<RsRetExpr>() != null ||
+                position.getPrevNonCommentSibling() is RsRetExpr ||
+                position.rightLeaves.all {
+                    println("r l: ${it.elementType}")
+                    it.elementType == RsElementTypes.RBRACE
+                        || it.elementType == TokenType.WHITE_SPACE
+                }
+            -> onReturnable(result)
+
+            position.leftSiblings.take(5).map { println("bol ls $it"); it }.count() == 2 ||//getPrevNonCommentSibling()?.elementType == RsElementTypes.IF ||
+                position.ancestorStrict<RsWhileExpr>() != null
+            -> onBoolean(result)
+
+            position.leftSiblings.count() == 0 -> println("EmptySibl")
+            position.leftSiblings.toSet()
+                .map { println("let ${it.elementType}"); it.elementType }
+                .containsAll(listOf(RsElementTypes.EQ, RsElementTypes.LET_DECL))
+            -> onLet(result)
+        }
+
 
         // GlobalSearchScope
         // parameters.position
@@ -61,5 +89,25 @@ class RsSmartCompletionContributor : CompletionContributor() {
                 }
             }
         })
+    }
+
+    private fun onValueArgumentList(position: PsiElement, context: ProcessingContext, result: CompletionResultSet) {
+        result.addElement(LookupElementBuilder.create("onValueArgumentList"))
+        println("RsSmartCompletionContributor.onValueArgumentList")
+    }
+
+    private fun onReturnable(result: CompletionResultSet) {
+        result.addElement(LookupElementBuilder.create("onReturnable"))
+        println("RsSmartCompletionContributor.onReturnable")
+    }
+
+    private fun onBoolean(result: CompletionResultSet) {
+        result.addElement(LookupElementBuilder.create("onBoolean"))
+        println("RsSmartCompletionContributor.onBoolean")
+    }
+
+    private fun onLet(result: CompletionResultSet) {
+        result.addElement(LookupElementBuilder.create("onLet"))
+        println("RsSmartCompletionContributor.onLet")
     }
 }

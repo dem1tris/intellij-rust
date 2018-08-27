@@ -30,10 +30,9 @@ class RsGenericParameterInfoHandler : ParameterInfoHandler<RsTypeArgumentList, R
     override fun updateParameterInfo(parameterOwner: RsTypeArgumentList, context: UpdateParameterInfoContext) {
         curParam = ParameterInfoUtils.getCurrentParameterIndex(parameterOwner.node, context.offset, RsElementTypes.COMMA)
         when {
-            // todo: understand
             context.parameterOwner == null -> context.parameterOwner = parameterOwner
 
-            // occurs in case of up-down cursor moving
+            // occurs e.g. in case of up-down cursor moving
             context.parameterOwner != parameterOwner -> context.removeHint()
         }
     }

@@ -11,60 +11,139 @@ import org.intellij.lang.annotations.Language
 class RsSmartCompletionContributorTest : RsCompletionTestBase() {
 
     fun `test let`() = checkCompletion("onLet", """
-        let x =/*caret*/
+        fn main() {
+            let x =/*caret*/
+        }
     """, """
-        let x =/*s*//*caret*/
+        fn main() {
+            let x =/*s*//*caret*/
+        }
     """)
 
     fun `test let 1`() = checkCompletion("onLet", """
-        let x = /*caret*/
+        fn main() {
+            let x = /*caret*/
+        }
     """, """
-        let x = /*s*//*caret*/
+        fn main() {
+            let x = /*s*//*caret*/
+        }
     """)
 
     fun `test let 3`() = checkCompletion("onLet", """
-        let x=/*caret*/
+        fn main() {
+            let x=/*caret*/
+        }
     """, """
-        let x=/*s*//*caret*/
+        fn main() {
+            let x=/*s*//*caret*/
+        }
     """)
 
     fun `test let 4`() = checkCompletion("onLet", """
-         fn main() {
-             let x= /*caret*/
-         }
+        fn main() {
+            let x= /*caret*/
+        }
     """, """
         fn main() {
             let x= /*s*//*caret*/
         }
     """)
 
-    fun `test boolean`() = checkCompletion("onBoolean", """
+    fun `test while`() = checkCompletion("onBoolean", """
         fn main() {
-            if/*caret*/
+            while /*caret*/
         }
     """, """
         fn main() {
-            if/*s*//*caret*/
+            while /*s*//*caret*/
         }
     """)
 
-    fun `test boolean 1`() = checkCompletion("onBoolean", """
+    fun `test if`() = checkCompletion("onBoolean", """
         fn main() {
             if /*caret*/
         }
     """, """
         fn main() {
-            if
-        } /*s*//*caret*/
+            if /*s*//*caret*/
+        }
     """)
 
-    fun `test boolean 2`() = checkCompletion("onBoolean", """
+    fun `test if paren`() = checkCompletion("onBoolean", """
         fn main() {
             if (/*caret*/)
         }
     """, """
         fn main() {
             if (/*s*//*caret*/)
+        }
+    """)
+
+    fun `test value arglist`() = checkCompletion("onVAL", """
+        fn foo(x: i32) -> i32 {
+            x
+        }
+        fn main() {
+            foo(/*caret*/)
+        }
+    """, """
+        fn foo(x: i32) -> i32 {
+            x
+        }
+        fn main() {
+            foo(/*s*//*caret*/)
+        }
+    """)
+
+    fun `test nested if`() = checkCompletion("onBoolean", """
+        fn foo(x: i32) -> i32 {
+            x
+        }
+        fn main() {
+            let x = 5;
+            let y = 7;
+            foo(if /*caret*/);
+        }
+    """, """
+        fn foo(x: i32) -> i32 {
+            x
+        }
+        fn main() {
+            let x = 5;
+            let y = 7;
+            foo(if /*s*//*caret*/);
+        }
+    """)
+
+    fun `test nested if 1`() = checkCompletion("onBoolean", """
+        fn foo(x: i32) -> i32 {
+            x
+        }
+        fn main() {
+            let x = 5;
+            let y = 7;
+            foo(if /*caret*/{ 5 } else { 7 });
+        }
+    """, """
+        fn foo(x: i32) -> i32 {
+            x
+        }
+        fn main() {
+            let x = 5;
+            let y = 7;
+            foo(if /*s*//*caret*/{ 5 } else { 7 });
+        }
+    """)
+
+    fun `test returnable`() = checkCompletion("onReturnable", """
+        struct S;
+        fn foo(x: i32) -> S {
+            /*caret*/
+        }
+    """, """
+        fn foo(x: i32) -> i32 {
+            /*s*//*caret*/
         }
     """)
 
@@ -84,10 +163,9 @@ class RsSmartCompletionContributorTest : RsCompletionTestBase() {
         @Language("Rust") before: String,
         @Language("Rust") after: String
     ) = checkByText(
-        """fn main() { /*b*/ }""".replace("/*b*/", before),
-        """fn main() { /*a*/ }""".replace("/*a*/", after).replace("/*s*/", lookupString)) {
-        println("BEFORE: " + """fn main() { /*b*/ }""".replace("/*b*/", before))
-        println("AFTER: " + """fn main() { /*a*/ }""".replace("/*a*/", after).replace("/*s*/", lookupString))
+        //"""fn main() { /*b*/ }""".replace("/*b*/", before),
+        //"""fn main() { /*a*/ }""".replace("/*a*/", after).replace("/*s*/", lookupString))
+        before, after.replace("/*s*/", lookupString)) {
         val items = myFixture.complete(CompletionType.SMART)
             ?: return@checkByText // single completion was inserted
         val lookupItem = items.find { it.lookupString == lookupString } ?: return@checkByText

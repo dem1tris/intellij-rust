@@ -11,8 +11,8 @@ import com.intellij.codeInsight.lookup.LookupElementBuilder
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.patterns.ElementPattern
 import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiWhiteSpace
 import com.intellij.psi.TokenType
+import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
@@ -40,30 +40,23 @@ class RsSmartCompletionContributor : CompletionContributor() {
         val context = ProcessingContext()
         val position = parameters.position
         println(parameters.editor.document.text)
+        println(position.containingFile.text)
+        println(position.textOffset)
         println(position.text)
+        println(position.elementType)
+        println("position = ${position}")
+        println("position.parent = ${position.parent}")
+        println("position.parent.parent = ${position.parent.parent}")
+        println("position.parent.parent.prev = ${position.parent.parent.prevSibling}")
+        println("position.parent.parent.next = ${position.parent.parent.nextSibling}")
         ProgressManager.checkCanceled()
         when {
-            position.ancestorStrict<RsValueArgumentList>() != null
-            -> onValueArgumentList(position, context, result)
+            checkValueArgumentList(position) -> onValueArgumentList(position, context, result)
 
-            position.ancestorOrSelf<RsRetExpr>() != null ||
-                position.getPrevNonCommentSibling() is RsRetExpr ||
-                position.rightLeaves.all {
-                    println("r l: ${it.elementType}")
-                    it.elementType == RsElementTypes.RBRACE
-                        || it.elementType == TokenType.WHITE_SPACE
-                }
-            -> onReturnable(result)
+            checkReturnable(position) -> onReturnable(result)
 
-            position.leftSiblings.take(5).map { println("bol ls $it"); it }.count() == 2 ||//getPrevNonCommentSibling()?.elementType == RsElementTypes.IF ||
-                position.ancestorStrict<RsWhileExpr>() != null
-            -> onBoolean(result)
-
-            position.leftSiblings.count() == 0 -> println("EmptySibl")
-            position.leftSiblings.toSet()
-                .map { println("let ${it.elementType}"); it.elementType }
-                .containsAll(listOf(RsElementTypes.EQ, RsElementTypes.LET_DECL))
-            -> onLet(result)
+            checkBoolean(position) -> onBoolean(result)
+            checkLet(position) -> onLet(result)
         }
 
 
@@ -91,9 +84,24 @@ class RsSmartCompletionContributor : CompletionContributor() {
         })
     }
 
+    private fun checkValueArgumentList(position: PsiElement): Boolean {
+        return PsiTreeUtil.getParentOfType(position, RsValueArgumentList::class.java, true,
+            RsCondition::class.java) != null
+    }
+
     private fun onValueArgumentList(position: PsiElement, context: ProcessingContext, result: CompletionResultSet) {
-        result.addElement(LookupElementBuilder.create("onValueArgumentList"))
+        result.addElement(LookupElementBuilder.create("onVAL"))
         println("RsSmartCompletionContributor.onValueArgumentList")
+    }
+
+    private fun checkReturnable(position: PsiElement): Boolean {
+        return position.ancestorOrSelf<RsRetExpr>() != null ||
+            position.getPrevNonCommentSibling() is RsRetExpr ||
+            position.rightLeaves.all {
+                println("r l: ${it.elementType}")
+                it.elementType == RsElementTypes.RBRACE
+                    || it.elementType == TokenType.WHITE_SPACE
+            }
     }
 
     private fun onReturnable(result: CompletionResultSet) {
@@ -101,9 +109,27 @@ class RsSmartCompletionContributor : CompletionContributor() {
         println("RsSmartCompletionContributor.onReturnable")
     }
 
+
+    private fun checkBoolean(position: PsiElement): Boolean {
+        println("RsSmartCompletionContributor.checkBoolean")
+        val path = position.parent as? RsPath ?: return false
+        val pexpr = path.parent as? RsPathExpr ?: return false
+        return pexpr.ancestorStrict<RsCondition>() != null
+    }
+
     private fun onBoolean(result: CompletionResultSet) {
         result.addElement(LookupElementBuilder.create("onBoolean"))
         println("RsSmartCompletionContributor.onBoolean")
+    }
+
+
+    private fun checkLet(position: PsiElement): Boolean {
+        println("RsSmartCompletionContributor.checkLet")
+        val path = position.parent as? RsPath ?: return false
+        val pexpr = path.parent as? RsPathExpr ?: return false
+        val letDecl = pexpr.ancestorStrict<RsLetDecl>() ?: return false
+
+        return true
     }
 
     private fun onLet(result: CompletionResultSet) {

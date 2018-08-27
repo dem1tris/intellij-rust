@@ -142,7 +142,8 @@ class RsSmartCompletionContributorTest : RsCompletionTestBase() {
             /*caret*/
         }
     """, """
-        fn foo(x: i32) -> i32 {
+        struct S;
+        fn foo(x: i32) -> S {
             /*s*//*caret*/
         }
     """)

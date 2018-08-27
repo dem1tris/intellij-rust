@@ -95,13 +95,13 @@ class RsSmartCompletionContributor : CompletionContributor() {
     }
 
     private fun checkReturnable(position: PsiElement): Boolean {
-        return position.ancestorOrSelf<RsRetExpr>() != null ||
-            position.getPrevNonCommentSibling() is RsRetExpr ||
-            position.rightLeaves.all {
-                println("r l: ${it.elementType}")
-                it.elementType == RsElementTypes.RBRACE
-                    || it.elementType == TokenType.WHITE_SPACE
-            }
+        val path = position.parent as? RsPath ?: return false
+        val pexpr = path.parent as? RsPathExpr ?: return false
+        val retExpr = position.ancestorOrSelf<RsRetExpr>()
+        return position.rightLeaves.all {
+            it.elementType == RsElementTypes.RBRACE
+                || it.elementType == TokenType.WHITE_SPACE
+        } || retExpr != null
     }
 
     private fun onReturnable(result: CompletionResultSet) {

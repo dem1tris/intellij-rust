@@ -96,6 +96,22 @@ class RsSmartCompletionContributorTest : RsCompletionTestBase() {
         }
     """)
 
+    fun `test value arglist a`() = checkCompletion("onVAL", """
+        fn foo(x: i32) -> i32 {
+            x
+        }
+        fn main() {
+            foo(a/*caret*/)
+        }
+    """, """
+        fn foo(x: i32) -> i32 {
+            x
+        }
+        fn main() {
+            foo(/*s*//*caret*/)
+        }
+    """)
+
     fun `test nested if`() = checkCompletion("onBoolean", """
         fn foo(x: i32) -> i32 {
             x
@@ -148,6 +164,42 @@ class RsSmartCompletionContributorTest : RsCompletionTestBase() {
         }
     """)
 
+    fun `test returnable comment`() = checkCompletion("onReturnable", """
+        struct S;
+        fn foo(x: i32) -> S {
+            /*caret*/// comment
+        }
+    """, """
+        struct S;
+        fn foo(x: i32) -> S {
+            /*s*//*caret*/// comment
+        }
+    """)
+
+    fun `test retexpr`() = checkCompletion("onReturnable", """
+        struct S;
+        fn foo(x: i32) -> S {
+            if 5 == 5 {
+                return /*caret*/// comment
+                let y = 5 + 5;
+                return S;
+            } else {
+                return S;
+            }
+        }
+    """, """
+        struct S;
+        fn foo(x: i32) -> S {
+            if 5 == 5 {
+                return /*s*//*caret*/// comment
+                let y = 5 + 5;
+                return S;
+            } else {
+                return S;
+            }
+        }
+    """)
+
 
     private fun checkCompletion(
         lookupStrings: List<String>,
@@ -164,8 +216,6 @@ class RsSmartCompletionContributorTest : RsCompletionTestBase() {
         @Language("Rust") before: String,
         @Language("Rust") after: String
     ) = checkByText(
-        //"""fn main() { /*b*/ }""".replace("/*b*/", before),
-        //"""fn main() { /*a*/ }""".replace("/*a*/", after).replace("/*s*/", lookupString))
         before, after.replace("/*s*/", lookupString)) {
         val items = myFixture.complete(CompletionType.SMART)
             ?: return@checkByText // single completion was inserted

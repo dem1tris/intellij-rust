@@ -16,6 +16,10 @@ import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
+import org.rust.lang.core.resolve.indexes.RsLangItemIndex
+import org.rust.lang.core.types.ty.Ty
+import org.rust.lang.core.types.ty.TyAdt
+import org.rust.lang.core.types.ty.TyUnknown
 
 class RsSmartCompletionContributor : CompletionContributor() {
 
@@ -52,11 +56,9 @@ class RsSmartCompletionContributor : CompletionContributor() {
         ProgressManager.checkCanceled()
         when {
             checkValueArgumentList(position) -> onValueArgumentList(position, context, result)
-
-            checkReturnable(position) -> onReturnable(result)
-
-            checkBoolean(position) -> onBoolean(result)
-            checkLet(position) -> onLet(result)
+            checkReturnable(position) -> onReturnable(position, result)
+            checkBoolean(position) -> onBoolean(position, result)
+            checkLet(position) -> onLet(position, result)
         }
 
 
@@ -97,17 +99,23 @@ class RsSmartCompletionContributor : CompletionContributor() {
     private fun checkReturnable(position: PsiElement): Boolean {
         val path = position.parent as? RsPath ?: return false
         val pexpr = path.parent as? RsPathExpr ?: return false
-        val retExpr = position.ancestorOrSelf<RsRetExpr>()
+        val retExpr = pexpr.ancestorStrict<RsRetExpr>()
         return position.rightLeaves.all {
+            println(it.elementType)
             it.elementType == RsElementTypes.RBRACE
                 || it.elementType == TokenType.WHITE_SPACE
+                || RS_COMMENTS.contains(it.elementType)
         } || retExpr != null
     }
 
-    private fun onReturnable(result: CompletionResultSet) {
+    private fun onReturnable(position: PsiElement, result: CompletionResultSet) {
         result.addElement(LookupElementBuilder.create("onReturnable"))
         println("RsSmartCompletionContributor.onReturnable")
+        val type = retType(position)
+
     }
+
+    private fun retType(position: PsiElement) = position.ancestorStrict<RsFunction>()?.returnType
 
 
     private fun checkBoolean(position: PsiElement): Boolean {
@@ -117,7 +125,7 @@ class RsSmartCompletionContributor : CompletionContributor() {
         return pexpr.ancestorStrict<RsCondition>() != null
     }
 
-    private fun onBoolean(result: CompletionResultSet) {
+    private fun onBoolean(position: PsiElement, result: CompletionResultSet) {
         result.addElement(LookupElementBuilder.create("onBoolean"))
         println("RsSmartCompletionContributor.onBoolean")
     }
@@ -127,13 +135,15 @@ class RsSmartCompletionContributor : CompletionContributor() {
         println("RsSmartCompletionContributor.checkLet")
         val path = position.parent as? RsPath ?: return false
         val pexpr = path.parent as? RsPathExpr ?: return false
-        val letDecl = pexpr.ancestorStrict<RsLetDecl>() ?: return false
+        val letDecl = PsiTreeUtil.getParentOfType(pexpr, RsLetDecl::class.java, true,
+            RsCondition::class.java) ?: return false
 
         return true
     }
 
-    private fun onLet(result: CompletionResultSet) {
+    private fun onLet(position: PsiElement, result: CompletionResultSet) {
         result.addElement(LookupElementBuilder.create("onLet"))
         println("RsSmartCompletionContributor.onLet")
+        val a = RsLangItemIndex
     }
 }

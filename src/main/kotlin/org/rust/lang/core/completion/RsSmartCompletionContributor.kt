@@ -20,8 +20,12 @@ import org.rust.ide.formatter.processors.removeTrailingComma
 import org.rust.ide.icons.RsIcons
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
+import org.rust.lang.core.resolve.ImplLookup
+import org.rust.lang.core.resolve.collectCompletionVariants
 import org.rust.lang.core.resolve.indexes.RsLangItemIndex
+import org.rust.lang.core.resolve.processPathResolveVariants
 import org.rust.lang.core.types.ty.TyAdt
+import org.rust.lang.core.types.type
 
 class RsSmartCompletionContributor : CompletionContributor() {
     /**
@@ -69,11 +73,9 @@ class RsSmartCompletionContributor : CompletionContributor() {
 
     // todo: as template
     private fun RsStructItem.buildLiteral(factory: RsPsiFactory): LookupElement {
-        val literal = factory.createStructLiteral(this.name!!)
-        val body = literal.structLiteralBody
         return LookupElementBuilder
-            .create(literal, this.name!!)
-            .withTailText(" {...}")
+            .create(factory.createStructLiteral(this.name!!), this.name!!)
+            .withTailText(" { ... }")
             .bold()
             .withIcon(RsIcons.STRUCT)
             .withInsertHandler { context, item ->
@@ -117,6 +119,17 @@ class RsSmartCompletionContributor : CompletionContributor() {
             }
     }
 
+    private fun RsStructItem.newCalls(factory: RsPsiFactory): List<LookupElement> {
+        val newFuncs = this.searchForImplementations().forEach {
+
+        }
+        val args: List<RsExpr> = listOf()
+        return listOf(LookupElementBuilder.create(
+            factory.createAssocFunctionCall(this.name!!, "new", args),
+            "${this.name}::new(${args.joinToString()})")
+            .withIcon(RsIcons.ASSOC_FUNCTION))
+    }
+
     private fun checkValueArgumentList(position: PsiElement): Boolean {
         return PsiTreeUtil.getParentOfType(position, RsValueArgumentList::class.java, true,
             RsCondition::class.java) != null
@@ -144,16 +157,28 @@ class RsSmartCompletionContributor : CompletionContributor() {
     }
 
     private fun onReturnable(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
-        val position = parameters.position
-        result.addElement(LookupElementBuilder.create("onReturnable"))
         println("RsSmartCompletionContributor.onReturnable")
+        // TODO fix me
+        val path = parameters.position.ancestorStrict<RsPath>() ?: return
+        val position = parameters.position
+
+
         val type = position.ancestorStrict<RsFunction>()?.returnType as? TyAdt ?: return
         val struct = type.item as? RsStructItem ?: return
-        val literal = struct.buildLiteral(RsPsiFactory(parameters.editor.project!!))
+        val factory = RsPsiFactory(parameters.editor.project!!)
+        val literal = struct.buildLiteral(factory)
         result.addElement(literal)
+        struct.newCalls(factory).map { result.addElement(it) }
+        val cv = collectCompletionVariants({ processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it) },
+            {
+                return@collectCompletionVariants when {
+                    (it as? RsStructItem)?.name == struct.name ->  false
+                    it.ancestorStrict<RsPathExpr>()?.type?.equals(type) == true -> true
+                    else -> false
+                }
+            }).forEach { result.addElement(it) }
+        result.addElement(LookupElementBuilder.create("onReturnable"))
     }
-
-    private fun retType(position: PsiElement) = position.ancestorStrict<RsFunction>()?.returnType
 
 
     private fun checkBoolean(position: PsiElement): Boolean {
@@ -184,4 +209,17 @@ class RsSmartCompletionContributor : CompletionContributor() {
         println("RsSmartCompletionContributor.onLet")
         val a = RsLangItemIndex
     }
+
+    /*fun collectCompletionVariants(f: (RsResolveProcessor) -> Unit, filter: (RsElement) -> Boolean = { true }): Array<LookupElement> {
+        val result = mutableListOf<LookupElement>()
+        f { e ->
+            val element = e.element ?: return@f false
+            if (element is RsFunction && element.isTest) return@f false
+            if (filter(element)) {
+                result += createLookupElement(element, e.name)
+            }
+            false
+        }
+        return result.toTypedArray()
+    }*/
 }

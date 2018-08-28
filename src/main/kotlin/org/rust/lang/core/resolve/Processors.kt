@@ -91,6 +91,19 @@ fun collectCompletionVariants(f: (RsResolveProcessor) -> Unit): Array<LookupElem
     return result.toTypedArray()
 }
 
+fun collectCompletionVariants(f: (RsResolveProcessor) -> Unit, filter: (RsElement) -> Boolean): Array<LookupElement> {
+    val result = mutableListOf<LookupElement>()
+    f { e ->
+        val element = e.element ?: return@f false
+        if (element is RsFunction && element.isTest) return@f false
+        if (filter(element)) {
+            result += createLookupElement(element, e.name)
+        }
+        false
+    }
+    return result.toTypedArray()
+}
+
 private data class SimpleScopeEntry(
     override val name: String,
     override val element: RsElement,

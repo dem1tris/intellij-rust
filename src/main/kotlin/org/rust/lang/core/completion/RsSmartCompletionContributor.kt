@@ -14,15 +14,16 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.TokenType
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
+import com.intellij.util.containers.nullize
+import org.rust.ide.formatter.impl.CommaList
+import org.rust.ide.formatter.processors.removeTrailingComma
+import org.rust.ide.icons.RsIcons
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
 import org.rust.lang.core.resolve.indexes.RsLangItemIndex
-import org.rust.lang.core.types.ty.Ty
 import org.rust.lang.core.types.ty.TyAdt
-import org.rust.lang.core.types.ty.TyUnknown
 
 class RsSmartCompletionContributor : CompletionContributor() {
-
     /**
      * The main contributor method that is supposed to provide completion variants to result, based on completion parameters.
      * The default implementation looks for [CompletionProvider]s you could register by
@@ -40,11 +41,10 @@ class RsSmartCompletionContributor : CompletionContributor() {
      */
     override fun fillCompletionVariants(parameters: CompletionParameters, result: CompletionResultSet) {
         if (parameters.completionType != CompletionType.SMART) return
-        val psiFactory = RsPsiFactory(parameters.editor.project!!)
         val context = ProcessingContext()
         val position = parameters.position
-        println(parameters.editor.document.text)
-        println(position.containingFile.text)
+        //println(parameters.editor.document.text)
+        //println(position.containingFile.text)
         println(position.textOffset)
         println(position.text)
         println(position.elementType)
@@ -55,10 +55,10 @@ class RsSmartCompletionContributor : CompletionContributor() {
         println("position.parent.parent.next = ${position.parent.parent.nextSibling}")
         ProgressManager.checkCanceled()
         when {
-            checkValueArgumentList(position) -> onValueArgumentList(position, context, result)
-            checkReturnable(position) -> onReturnable(position, result)
-            checkBoolean(position) -> onBoolean(position, result)
-            checkLet(position) -> onLet(position, result)
+            checkValueArgumentList(position) -> onValueArgumentList(parameters, context, result)
+            checkReturnable(position) -> onReturnable(parameters, context, result)
+            checkBoolean(position) -> onBoolean(parameters, context, result)
+            checkLet(position) -> onLet(parameters, context, result)
         }
 
 
@@ -67,23 +67,54 @@ class RsSmartCompletionContributor : CompletionContributor() {
         // result.addElement(_.buildLiteral(psiFactory))
     }
 
+    // todo: as template
     private fun RsStructItem.buildLiteral(factory: RsPsiFactory): LookupElement {
         val literal = factory.createStructLiteral(this.name!!)
         val body = literal.structLiteralBody
-        return LookupElementBuilder.create(literal, this.name!!).withInsertHandler(object : InsertHandler<LookupElement> {
-            /**
-             * Invoked inside atomic action.
-             */
-            override fun handleInsert(context: InsertionContext?, item: LookupElement?) {
+        return LookupElementBuilder
+            .create(literal, this.name!!)
+            .withTailText(" {...}")
+            .bold()
+            .withIcon(RsIcons.STRUCT)
+            .withInsertHandler { context, item ->
+                val offset = context.editor.caretModel.offset
+                // `S` as RsPathExpr
+                val pathExpr = context.file.findElementAt(offset)
+                    ?.prevSibling as? RsPathExpr ?: return@withInsertHandler
+                println("pathExpr = ${pathExpr}")
                 val declaredFields = this@buildLiteral.namedFields
+                val forceMultiline = declaredFields.size > 2
+                var firstAdded: RsStructLiteralField? = null
+                if (!declaredFields.isEmpty()) {
+                    pathExpr.parent.addAfter(factory.createStructLiteral("Dummy").structLiteralBody, pathExpr)
+                    pathExpr.parent.addAfter(factory.createWhitespace(" "), pathExpr)
+                }
+
+                // RsStructLiteralBody in `S {  }`
+                val inserted = context.file.findElementAt(offset)
+                    ?.nextSibling as? RsStructLiteralBody ?: return@withInsertHandler
                 declaredFields.map {
+                    println("fld map")
                     factory.createStructLiteralField(it.name!!, factory.createExpression("()"))
                 }.forEach {
-                    body.addAfter(it, body.lbrace)
-                    ensureTrailingComma(body.structLiteralFieldList)
+                    println("fld foreach")
+                    val added = inserted.addBefore(it, inserted.rbrace) as RsStructLiteralField
+                    if (firstAdded == null) {
+                        firstAdded = added
+                    }
+                    ensureTrailingComma(inserted.structLiteralFieldList)
+                }
+
+                if (forceMultiline) {
+                    inserted.addAfter(factory.createNewline(), inserted.lbrace)
+                }
+                CommaList.forElement(inserted.elementType)?.removeTrailingComma(inserted)
+
+                // `field: (/*caret*/)`
+                if (firstAdded != null) {
+                    context.editor.caretModel.moveToOffset(firstAdded?.expr!!.textOffset + 1)
                 }
             }
-        })
     }
 
     private fun checkValueArgumentList(position: PsiElement): Boolean {
@@ -91,28 +122,35 @@ class RsSmartCompletionContributor : CompletionContributor() {
             RsCondition::class.java) != null
     }
 
-    private fun onValueArgumentList(position: PsiElement, context: ProcessingContext, result: CompletionResultSet) {
+    private fun onValueArgumentList(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
         result.addElement(LookupElementBuilder.create("onVAL"))
         println("RsSmartCompletionContributor.onValueArgumentList")
     }
 
     private fun checkReturnable(position: PsiElement): Boolean {
+        println("RsSmartCompletionContributor.checkReturnable")
         val path = position.parent as? RsPath ?: return false
         val pexpr = path.parent as? RsPathExpr ?: return false
         val retExpr = pexpr.ancestorStrict<RsRetExpr>()
-        return position.rightLeaves.all {
-            println(it.elementType)
-            it.elementType == RsElementTypes.RBRACE
-                || it.elementType == TokenType.WHITE_SPACE
-                || RS_COMMENTS.contains(it.elementType)
-        } || retExpr != null
+        val function = pexpr.ancestorStrict<RsFunction>() ?: return false
+        return position.rightLeaves
+            .filter { function.isAncestorOf(it) }
+            .all {
+                println(it.elementType)
+                it.elementType == RsElementTypes.RBRACE
+                    || it.elementType == TokenType.WHITE_SPACE
+                    || RS_COMMENTS.contains(it.elementType)
+            } || retExpr != null
     }
 
-    private fun onReturnable(position: PsiElement, result: CompletionResultSet) {
+    private fun onReturnable(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
+        val position = parameters.position
         result.addElement(LookupElementBuilder.create("onReturnable"))
         println("RsSmartCompletionContributor.onReturnable")
-        val type = retType(position)
-
+        val type = position.ancestorStrict<RsFunction>()?.returnType as? TyAdt ?: return
+        val struct = type.item as? RsStructItem ?: return
+        val literal = struct.buildLiteral(RsPsiFactory(parameters.editor.project!!))
+        result.addElement(literal)
     }
 
     private fun retType(position: PsiElement) = position.ancestorStrict<RsFunction>()?.returnType
@@ -125,7 +163,7 @@ class RsSmartCompletionContributor : CompletionContributor() {
         return pexpr.ancestorStrict<RsCondition>() != null
     }
 
-    private fun onBoolean(position: PsiElement, result: CompletionResultSet) {
+    private fun onBoolean(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
         result.addElement(LookupElementBuilder.create("onBoolean"))
         println("RsSmartCompletionContributor.onBoolean")
     }
@@ -141,7 +179,7 @@ class RsSmartCompletionContributor : CompletionContributor() {
         return true
     }
 
-    private fun onLet(position: PsiElement, result: CompletionResultSet) {
+    private fun onLet(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
         result.addElement(LookupElementBuilder.create("onLet"))
         println("RsSmartCompletionContributor.onLet")
         val a = RsLangItemIndex

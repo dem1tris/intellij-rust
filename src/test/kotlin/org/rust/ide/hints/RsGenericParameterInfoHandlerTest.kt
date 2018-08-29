@@ -11,7 +11,7 @@ import com.intellij.testFramework.utils.parameterInfo.MockUpdateParameterInfoCon
 import junit.framework.AssertionFailedError
 import junit.framework.TestCase
 import org.intellij.lang.annotations.Language
-import org.rust.lang.RsTestBase
+import org.rust.RsTestBase
 
 
 /**

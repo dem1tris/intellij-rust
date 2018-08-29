@@ -200,6 +200,18 @@ class RsSmartCompletionContributorTest : RsCompletionTestBase() {
         }
     """)
 
+    fun `test generic`() = checkCompletion("x", """
+        fn gen(&self, x: T) -> T {
+        return /*caret*/
+    }
+    """, """
+        fn gen(&self, x: T) -> T {
+        return /*s*//*caret*/
+    }
+    """)
+
+
+
 
     private fun checkCompletion(
         lookupStrings: List<String>,

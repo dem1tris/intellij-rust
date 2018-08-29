@@ -15,7 +15,6 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.TokenType
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
-import com.intellij.util.containers.nullize
 import org.rust.ide.formatter.impl.CommaList
 import org.rust.ide.formatter.processors.removeTrailingComma
 import org.rust.ide.icons.RsIcons
@@ -24,8 +23,8 @@ import org.rust.lang.core.psi.ext.*
 import org.rust.lang.core.resolve.ImplLookup
 import org.rust.lang.core.resolve.collectCompletionVariants
 import org.rust.lang.core.resolve.indexes.RsLangItemIndex
-import org.rust.lang.core.resolve.processMethodCallExprResolveVariants
 import org.rust.lang.core.resolve.processPathResolveVariants
+import org.rust.lang.core.types.ty.Ty
 import org.rust.lang.core.types.ty.TyAdt
 import org.rust.lang.core.types.type
 
@@ -45,6 +44,8 @@ class RsSmartCompletionContributor : CompletionContributor() {
      * ensure you call [com.intellij.openapi.progress.ProgressManager.checkCanceled] often enough so that the completion process
      * can be cancelled smoothly when the user begins to type in the editor.
      */
+    // todo: add single completion variant <space> in case of e.g. `return/*caret*/` invocation
+    // todo: call .checkCanceled more often
     override fun fillCompletionVariants(parameters: CompletionParameters, result: CompletionResultSet) {
         if (parameters.completionType != CompletionType.SMART) return
         val context = ProcessingContext()
@@ -120,25 +121,34 @@ class RsSmartCompletionContributor : CompletionContributor() {
             } || retExpr != null
     }
 
+    private fun Ty.suite(typeSet: Set<Ty>): Boolean {
+        if (!typeSet.contains(this)) return false
+        if (this is TyAdt && typeSet.none { this.item == (it as? TyAdt)?.item }) return false
+        return true
+    }
+
     private fun onReturnable(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
         println("RsSmartCompletionContributor.onReturnable")
-        // TODO fix me
         val path = parameters.position.ancestorStrict<RsPath>() ?: return
-        val type = parameters.position.ancestorStrict<RsFunction>()?.returnType as? TyAdt ?: return
-        val struct = type.item as? RsStructItem ?: return
+        val retType = parameters.position.ancestorStrict<RsFunction>()?.returnType
+        val typeSet = listOfNotNull(retType).toMutableSet()
+
+        val struct = (retType as? TyAdt)?.item as? RsStructItem
+        // need collect assoc functions
         var variants = collectCompletionVariants({ processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it) },
             {
                 println("cv ${it.elementType}:$it")
                 return@collectCompletionVariants when {
-                    (it as? RsStructItem)?.name == struct.name -> true
-                    it is RsPatBinding && it.type == type -> true
-                    it is RsFunction /*&& it.isAssocFn && it.retType as? TyAdt == type*/ -> true
+                    it is RsStructItem && it.declaredType.suite(typeSet) -> true
+                    it is RsPatBinding && it.type.suite(typeSet) -> true
+                    it is RsFunction && it.returnType.suite(typeSet) -> true
                     else -> false
                 }
             })
-        variants += collectCompletionVariants( {processMethodCallExprResolveVariants(ImplLookup.relativeTo(struct), type, it)} )
-        variants.map { if (it.psiElement is RsStructItem) LookupElementDecorator.withInsertHandler(it, StructHandler(struct)) else it }
-        .forEach { result.addElement(it) }
+        //variants += collectCompletionVariants( {processMethodCallExprResolveVariants(ImplLookup.relativeTo(struct), type, it)} )
+        variants
+            .map { if (it.psiElement is RsStructItem && struct != null) LookupElementDecorator.withInsertHandler(it, StructHandler(struct)) else it }
+            .forEach { result.addElement(it) }
         result.addElement(LookupElementBuilder.create("onReturnable"))
     }
 

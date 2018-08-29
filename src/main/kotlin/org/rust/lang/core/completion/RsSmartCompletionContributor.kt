@@ -171,9 +171,10 @@ class RsSmartCompletionContributor : CompletionContributor() {
         struct.newCalls(factory).map { result.addElement(it) }
         val cv = collectCompletionVariants({ processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it) },
             {
+                println("cv ${it.elementType}:$it")
                 return@collectCompletionVariants when {
                     (it as? RsStructItem)?.name == struct.name ->  false
-                    it.ancestorStrict<RsPathExpr>()?.type?.equals(type) == true -> true
+                    it is RsPatBinding && it.type == type -> true
                     else -> false
                 }
             }).forEach { result.addElement(it) }

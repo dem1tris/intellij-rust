@@ -635,6 +635,14 @@ private fun processMethodDeclarationsWithDeref(lookup: ImplLookup, receiver: Ty,
     }
 }
 
+/*fun processFunctionDeclarations(adt: RsStructOrEnumItemElement, processor: RsResolveProcessor): Boolean {
+    return processAll(adt.searchForImplementations().asSequence(), processor)
+}
+
+fun processAll(asSequence: Sequence<RsImplItem>, processor: RsResolveProcessor): Boolean {
+
+}*/
+
 private fun processAssociatedItems(
     lookup: ImplLookup,
     type: Ty,

@@ -23,6 +23,7 @@ import org.rust.lang.core.psi.ext.*
 import org.rust.lang.core.resolve.ImplLookup
 import org.rust.lang.core.resolve.collectCompletionVariants
 import org.rust.lang.core.resolve.indexes.RsLangItemIndex
+import org.rust.lang.core.resolve.processMethodCallExprResolveVariants
 import org.rust.lang.core.resolve.processPathResolveVariants
 import org.rust.lang.core.types.ty.Ty
 import org.rust.lang.core.types.ty.TyAdt
@@ -121,33 +122,24 @@ class RsSmartCompletionContributor : CompletionContributor() {
             } || retExpr != null
     }
 
-    private fun Ty.suite(typeSet: Set<Ty>): Boolean {
-        if (!typeSet.contains(this)) return false
-        if (this is TyAdt && typeSet.none { this.item == (it as? TyAdt)?.item }) return false
-        return true
-    }
-
     private fun onReturnable(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
         println("RsSmartCompletionContributor.onReturnable")
         val path = parameters.position.ancestorStrict<RsPath>() ?: return
-        val retType = parameters.position.ancestorStrict<RsFunction>()?.returnType
-        val typeSet = listOfNotNull(retType).toMutableSet()
+        val retType = parameters.position.ancestorStrict<RsFunction>()?.returnType ?: return
+        val typeSet = setOf(retType).toMutableSet()
 
         val struct = (retType as? TyAdt)?.item as? RsStructItem
-        // need collect assoc functions
-        var variants = collectCompletionVariants({ processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it) },
-            {
-                println("cv ${it.elementType}:$it")
-                return@collectCompletionVariants when {
-                    it is RsStructItem && it.declaredType.suite(typeSet) -> true
-                    it is RsPatBinding && it.type.suite(typeSet) -> true
-                    it is RsFunction && it.returnType.suite(typeSet) -> true
-                    else -> false
-                }
-            })
-        //variants += collectCompletionVariants( {processMethodCallExprResolveVariants(ImplLookup.relativeTo(struct), type, it)} )
+        // todo: need collect assoc functions
+        var variants =
+            collectCompletionVariants({ processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it) }, Filter(typeSet))
+        if (struct != null) {
+            variants += collectCompletionVariants({ processMethodCallExprResolveVariants(ImplLookup.relativeTo(struct), retType, it) }, Filter(typeSet))
+        }
         variants
-            .map { if (it.psiElement is RsStructItem && struct != null) LookupElementDecorator.withInsertHandler(it, StructHandler(struct)) else it }
+            .map {
+                if (it.psiElement is RsStructItem && struct != null) LookupElementDecorator.withInsertHandler(it, StructHandler(struct))
+                else it
+            }
             .forEach { result.addElement(it) }
         result.addElement(LookupElementBuilder.create("onReturnable"))
     }
@@ -181,8 +173,26 @@ class RsSmartCompletionContributor : CompletionContributor() {
         println("RsSmartCompletionContributor.onLet")
         val a = RsLangItemIndex
     }
-}
 
+
+    private class Filter(val typeSet: Set<Ty>) : (RsElement) -> Boolean {
+        private fun Ty.suite(typeSet: Set<Ty>): Boolean {
+            if (!typeSet.contains(this)) return false
+            if (this is TyAdt && typeSet.none { this.item == (it as? TyAdt)?.item }) return false
+            return true
+        }
+
+        override fun invoke(element: RsElement) = { it: RsElement ->
+            println("cv ${it.elementType}:$it:${(it as? RsFunction)?.name ?: ""}")
+            when {
+                it is RsStructItem && it.declaredType.suite(typeSet) -> true
+                it is RsPatBinding && it.type.suite(typeSet) -> true
+                it is RsFunction && it.returnType.suite(typeSet) -> true
+                else -> false
+            }
+        }.invoke(element)
+    }
+}
 
 class StructHandler(val struct: RsStructItem) : InsertHandler<LookupElement?> {
     override fun handleInsert(context: InsertionContext, item: LookupElement?) {

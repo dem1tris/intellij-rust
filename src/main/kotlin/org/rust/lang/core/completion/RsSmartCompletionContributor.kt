@@ -8,6 +8,7 @@ package org.rust.lang.core.completion
 import com.intellij.codeInsight.completion.*
 import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.codeInsight.lookup.LookupElementBuilder
+import com.intellij.codeInsight.lookup.LookupElementDecorator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.patterns.ElementPattern
 import com.intellij.psi.PsiElement
@@ -23,6 +24,7 @@ import org.rust.lang.core.psi.ext.*
 import org.rust.lang.core.resolve.ImplLookup
 import org.rust.lang.core.resolve.collectCompletionVariants
 import org.rust.lang.core.resolve.indexes.RsLangItemIndex
+import org.rust.lang.core.resolve.processMethodCallExprResolveVariants
 import org.rust.lang.core.resolve.processPathResolveVariants
 import org.rust.lang.core.types.ty.TyAdt
 import org.rust.lang.core.types.type
@@ -78,45 +80,7 @@ class RsSmartCompletionContributor : CompletionContributor() {
             .withTailText(" { ... }")
             .bold()
             .withIcon(RsIcons.STRUCT)
-            .withInsertHandler { context, item ->
-                val offset = context.editor.caretModel.offset
-                // `S` as RsPathExpr
-                val pathExpr = context.file.findElementAt(offset)
-                    ?.prevSibling as? RsPathExpr ?: return@withInsertHandler
-                println("pathExpr = ${pathExpr}")
-                val declaredFields = this@buildLiteral.namedFields
-                val forceMultiline = declaredFields.size > 2
-                var firstAdded: RsStructLiteralField? = null
-                if (!declaredFields.isEmpty()) {
-                    pathExpr.parent.addAfter(factory.createStructLiteral("Dummy").structLiteralBody, pathExpr)
-                    pathExpr.parent.addAfter(factory.createWhitespace(" "), pathExpr)
-                }
-
-                // RsStructLiteralBody in `S {  }`
-                val inserted = context.file.findElementAt(offset)
-                    ?.nextSibling as? RsStructLiteralBody ?: return@withInsertHandler
-                declaredFields.map {
-                    println("fld map")
-                    factory.createStructLiteralField(it.name!!, factory.createExpression("()"))
-                }.forEach {
-                    println("fld foreach")
-                    val added = inserted.addBefore(it, inserted.rbrace) as RsStructLiteralField
-                    if (firstAdded == null) {
-                        firstAdded = added
-                    }
-                    ensureTrailingComma(inserted.structLiteralFieldList)
-                }
-
-                if (forceMultiline) {
-                    inserted.addAfter(factory.createNewline(), inserted.lbrace)
-                }
-                CommaList.forElement(inserted.elementType)?.removeTrailingComma(inserted)
-
-                // `field: (/*caret*/)`
-                if (firstAdded != null) {
-                    context.editor.caretModel.moveToOffset(firstAdded?.expr!!.textOffset + 1)
-                }
-            }
+            .withInsertHandler(StructHandler(this))
     }
 
     private fun RsStructItem.newCalls(factory: RsPsiFactory): List<LookupElement> {
@@ -160,24 +124,21 @@ class RsSmartCompletionContributor : CompletionContributor() {
         println("RsSmartCompletionContributor.onReturnable")
         // TODO fix me
         val path = parameters.position.ancestorStrict<RsPath>() ?: return
-        val position = parameters.position
-
-
-        val type = position.ancestorStrict<RsFunction>()?.returnType as? TyAdt ?: return
+        val type = parameters.position.ancestorStrict<RsFunction>()?.returnType as? TyAdt ?: return
         val struct = type.item as? RsStructItem ?: return
-        val factory = RsPsiFactory(parameters.editor.project!!)
-        val literal = struct.buildLiteral(factory)
-        result.addElement(literal)
-        struct.newCalls(factory).map { result.addElement(it) }
-        val cv = collectCompletionVariants({ processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it) },
+        var variants = collectCompletionVariants({ processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it) },
             {
                 println("cv ${it.elementType}:$it")
                 return@collectCompletionVariants when {
-                    (it as? RsStructItem)?.name == struct.name ->  false
+                    (it as? RsStructItem)?.name == struct.name -> true
                     it is RsPatBinding && it.type == type -> true
+                    it is RsFunction /*&& it.isAssocFn && it.retType as? TyAdt == type*/ -> true
                     else -> false
                 }
-            }).forEach { result.addElement(it) }
+            })
+        variants += collectCompletionVariants( {processMethodCallExprResolveVariants(ImplLookup.relativeTo(struct), type, it)} )
+        variants.map { if (it.psiElement is RsStructItem) LookupElementDecorator.withInsertHandler(it, StructHandler(struct)) else it }
+        .forEach { result.addElement(it) }
         result.addElement(LookupElementBuilder.create("onReturnable"))
     }
 
@@ -210,17 +171,48 @@ class RsSmartCompletionContributor : CompletionContributor() {
         println("RsSmartCompletionContributor.onLet")
         val a = RsLangItemIndex
     }
+}
 
-    /*fun collectCompletionVariants(f: (RsResolveProcessor) -> Unit, filter: (RsElement) -> Boolean = { true }): Array<LookupElement> {
-        val result = mutableListOf<LookupElement>()
-        f { e ->
-            val element = e.element ?: return@f false
-            if (element is RsFunction && element.isTest) return@f false
-            if (filter(element)) {
-                result += createLookupElement(element, e.name)
-            }
-            false
+
+class StructHandler(val struct: RsStructItem) : InsertHandler<LookupElement?> {
+    override fun handleInsert(context: InsertionContext, item: LookupElement?) {
+        val factory = RsPsiFactory(context.project)
+        val offset = context.editor.caretModel.offset
+        // `S` as RsPathExpr
+        val pathExpr = context.file.findElementAt(offset)
+            ?.prevSibling as? RsPathExpr ?: return
+        println("pathExpr = ${pathExpr}")
+        val declaredFields = struct.namedFields
+        val forceMultiline = declaredFields.size > 2
+        var firstAdded: RsStructLiteralField? = null
+        if (!declaredFields.isEmpty()) {
+            pathExpr.parent.addAfter(factory.createStructLiteral("Dummy").structLiteralBody, pathExpr)
+            pathExpr.parent.addAfter(factory.createWhitespace(" "), pathExpr)
         }
-        return result.toTypedArray()
-    }*/
+
+        // RsStructLiteralBody in `S {  }`
+        val inserted = context.file.findElementAt(offset)
+            ?.nextSibling as? RsStructLiteralBody ?: return
+        declaredFields.map {
+            println("fld map")
+            factory.createStructLiteralField(it.name!!, factory.createExpression("()"))
+        }.forEach {
+            println("fld foreach")
+            val added = inserted.addBefore(it, inserted.rbrace) as RsStructLiteralField
+            if (firstAdded == null) {
+                firstAdded = added
+            }
+            ensureTrailingComma(inserted.structLiteralFieldList)
+        }
+
+        if (forceMultiline) {
+            inserted.addAfter(factory.createNewline(), inserted.lbrace)
+        }
+        CommaList.forElement(inserted.elementType)?.removeTrailingComma(inserted)
+
+        // `field: (/*caret*/)`
+        if (firstAdded != null) {
+            context.editor.caretModel.moveToOffset(firstAdded?.expr!!.textOffset + 1)
+        }
+    }
 }

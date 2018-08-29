@@ -8,10 +8,12 @@ package org.rust.toml
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.project.Project
-import com.intellij.testFramework.LightProjectDescriptor
 import org.intellij.lang.annotations.Language
-import org.rust.lang.RsTestBase
+import org.rust.ProjectDescriptor
+import org.rust.RsTestBase
+import org.rust.WithStdlibAndDependencyRustProjectDescriptor
 
+@ProjectDescriptor(WithStdlibAndDependencyRustProjectDescriptor::class)
 class CargoCrateDocLineMarkerProviderTest : RsTestBase() {
     protected fun doTestByText(@Language("toml") source: String) {
         myFixture.configureByText("cargo.toml", source)
@@ -38,8 +40,6 @@ class CargoCrateDocLineMarkerProviderTest : RsTestBase() {
         val MARKER = "# - "
         val COMPARE_SEPARATOR = " | "
     }
-
-    override fun getProjectDescriptor(): LightProjectDescriptor = WithStdlibAndDependencyRustProjectDescriptor
 
     fun `test standard version`() = doTestByText("""
         [dependencies]

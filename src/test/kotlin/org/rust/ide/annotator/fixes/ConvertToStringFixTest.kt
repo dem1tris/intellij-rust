@@ -5,12 +5,13 @@
 
 package org.rust.ide.annotator.fixes
 
+import org.rust.ProjectDescriptor
+import org.rust.WithStdlibRustProjectDescriptor
 import org.rust.ide.inspections.RsInspectionsTestBase
 import org.rust.ide.inspections.RsTypeCheckInspection
 
+@ProjectDescriptor(WithStdlibRustProjectDescriptor::class)
 class ConvertToStringFixTest : RsInspectionsTestBase(RsTypeCheckInspection()) {
-    override fun getProjectDescriptor() = WithStdlibRustProjectDescriptor
-
     fun `test str to_string`() = checkFixByText("Convert to String using `ToString` trait", """
             fn main () {
                 let _: String = <error>"Hello World!"<caret></error>;

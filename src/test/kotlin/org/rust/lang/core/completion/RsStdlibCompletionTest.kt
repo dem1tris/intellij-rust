@@ -5,11 +5,11 @@
 
 package org.rust.lang.core.completion
 
-import com.intellij.testFramework.LightProjectDescriptor
+import org.rust.ProjectDescriptor
+import org.rust.WithStdlibRustProjectDescriptor
 
+@ProjectDescriptor(WithStdlibRustProjectDescriptor::class)
 class RsStdlibCompletionTest : RsCompletionTestBase() {
-    override fun getProjectDescriptor(): LightProjectDescriptor = WithStdlibRustProjectDescriptor
-
     fun `test prelude`() = @Suppress("DEPRECATION") checkSingleCompletion("drop()", """
         fn main() {
             dr/*caret*/

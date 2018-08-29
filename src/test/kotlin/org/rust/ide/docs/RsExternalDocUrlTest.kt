@@ -5,12 +5,11 @@
 
 package org.rust.ide.docs
 
-import com.intellij.testFramework.LightProjectDescriptor
+import org.rust.ProjectDescriptor
+import org.rust.WithStdlibAndDependencyRustProjectDescriptor
 
+@ProjectDescriptor(WithStdlibAndDependencyRustProjectDescriptor::class)
 class RsExternalDocUrlTest : RsDocumentationProviderTest() {
-
-    override fun getProjectDescriptor(): LightProjectDescriptor = WithStdlibAndDependencyRustProjectDescriptor
-
     fun `test not stdlib item`() = doUrlTestByFileTree("""
         //- dep-lib/lib.rs
         pub struct Foo;

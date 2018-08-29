@@ -6,9 +6,8 @@
 package org.rust.lang.core.resolve
 
 import com.intellij.openapi.project.Project
-import org.rust.lang.core.macros.setContext
+import org.rust.lang.core.psi.RsCodeFragmentFactory
 import org.rust.lang.core.psi.RsImplItem
-import org.rust.lang.core.psi.RsPsiFactory
 import org.rust.lang.core.psi.RsTraitItem
 import org.rust.lang.core.psi.RsTypeAlias
 import org.rust.lang.core.psi.ext.*
@@ -129,10 +128,10 @@ class ImplLookup(
     private val primitiveTyHardcodedImplsCache = mutableMapOf<TyPrimitive, Collection<BoundElement<RsTraitItem>>>()
     private val binOpsTraitAndOutputCache = mutableMapOf<ArithmeticOp, Pair<RsTraitItem, RsTypeAlias>?>()
     private val arithOps by lazy(NONE) {
-        ArithmeticOp.values().mapNotNull { RsLangItemIndex.findLangItem(project, it.itemName, it.modName) }
+        ArithmeticOp.values().mapNotNull { RsLangItemIndex.findLangItem(project, it.itemName) }
     }
     private val assignArithOps by lazy(NONE) {
-        ArithmeticAssignmentOp.values().mapNotNull { RsLangItemIndex.findLangItem(project, it.itemName, it.modName) }
+        ArithmeticAssignmentOp.values().mapNotNull { RsLangItemIndex.findLangItem(project, it.itemName) }
     }
     private val comparisionOps by lazy(NONE) {
         listOfNotNull(
@@ -156,14 +155,12 @@ class ImplLookup(
         val trait = RsLangItemIndex.findLangItem(project, "index") ?: return@lazy null
         trait.findAssociatedType("Output")?.let { trait to it }
     }
-    private val iteratorTraitAndOutput: Pair<RsTraitItem, RsTypeAlias>? by lazy(NONE) {
-        val trait = items.findIteratorTrait() ?: return@lazy null
-        trait.findAssociatedType("Item")?.let { trait to it }
-    }
     private val intoIteratorTraitAndOutput: Pair<RsTraitItem, RsTypeAlias>? by lazy(NONE) {
         val trait = items.findCoreItem("iter::IntoIterator") as? RsTraitItem ?: return@lazy null
         trait.findAssociatedType("Item")?.let { trait to it }
     }
+
+    private val codeFragmentFactory: RsCodeFragmentFactory by lazy(NONE) { RsCodeFragmentFactory(project) }
 
     val ctx: RsInferenceContext by lazy(NONE) {
         RsInferenceContext(this, items)
@@ -529,8 +526,7 @@ class ImplLookup(
     }
 
     fun findIteratorItemType(ty: Ty): TyWithObligations<Ty>? {
-        return selectProjection(iteratorTraitAndOutput ?: return null, ty).ok()
-            ?: selectProjection(intoIteratorTraitAndOutput ?: return null, ty).ok()
+        return selectProjection(intoIteratorTraitAndOutput ?: return null, ty).ok()
     }
 
     fun findIndexOutputType(containerType: Ty, indexType: Ty): TyWithObligations<Ty>? {
@@ -539,7 +535,7 @@ class ImplLookup(
 
     fun findArithmeticBinaryExprOutputType(lhsType: Ty, rhsType: Ty, op: ArithmeticOp): TyWithObligations<Ty>? {
         val traitAndOutput = binOpsTraitAndOutputCache.getOrPut(op) {
-            val trait = RsLangItemIndex.findLangItem(project, op.itemName, op.modName) ?: return@getOrPut null
+            val trait = RsLangItemIndex.findLangItem(project, op.itemName) ?: return@getOrPut null
             trait.findAssociatedType("Output")?.let { trait to it }
         } ?: return null
         return selectProjection(traitAndOutput, lhsType, rhsType).ok()
@@ -624,7 +620,7 @@ class ImplLookup(
     }
 
     fun selectOverloadedOp(lhsType: Ty, rhsType: Ty, op: OverloadableBinaryOperator): SelectionResult<Selection> {
-        val trait = RsLangItemIndex.findLangItem(project, op.itemName, op.modName) ?: return SelectionResult.Err()
+        val trait = RsLangItemIndex.findLangItem(project, op.itemName) ?: return SelectionResult.Err()
         return select(TraitRef(lhsType, trait.withSubst(rhsType)))
     }
 
@@ -671,7 +667,7 @@ class ImplLookup(
 
     fun isTraitVisibleFrom(trait: RsTraitItem, scope: RsElement): Boolean {
         val name = trait.name ?: return true
-        val path = RsPsiFactory(project).tryCreatePath(name)?.apply { setContext(scope) } ?: return true
+        val path = codeFragmentFactory.createPath(name, scope) ?: return true
         return resolvePath(path, this).any { it.element == trait }
     }
 

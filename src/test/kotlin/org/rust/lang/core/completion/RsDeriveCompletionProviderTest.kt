@@ -5,14 +5,13 @@
 
 package org.rust.lang.core.completion
 
-import com.intellij.testFramework.LightProjectDescriptor
+import org.rust.ProjectDescriptor
+import org.rust.WithStdlibRustProjectDescriptor
 import org.rust.lang.core.resolve.StdDerivableTrait
 import org.rust.lang.core.resolve.withDependencies
 
+@ProjectDescriptor(WithStdlibRustProjectDescriptor::class)
 class RsDeriveCompletionProviderTest : RsCompletionTestBase() {
-
-    override fun getProjectDescriptor(): LightProjectDescriptor = WithStdlibRustProjectDescriptor
-
     fun `test complete on struct`() = doSingleCompletion("""
         #[derive(Debu/*caret*/)]
         struct Test {

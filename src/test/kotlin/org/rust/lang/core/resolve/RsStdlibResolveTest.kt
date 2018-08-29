@@ -5,12 +5,12 @@
 
 package org.rust.lang.core.resolve
 
+import org.rust.ProjectDescriptor
+import org.rust.WithStdlibRustProjectDescriptor
 import org.rust.lang.core.types.infer.TypeInferenceMarks
 
+@ProjectDescriptor(WithStdlibRustProjectDescriptor::class)
 class RsStdlibResolveTest : RsResolveTestBase() {
-
-    override fun getProjectDescriptor() = WithStdlibRustProjectDescriptor
-
     fun `test resolve fs`() = stubOnlyResolve("""
     //- main.rs
         use std::fs::File;
@@ -550,7 +550,7 @@ class RsStdlibResolveTest : RsResolveTestBase() {
 
         extern crate alloc;
 
-        use alloc::Vec;
+        use alloc::vec::Vec;
 
         fn foo(v: Vec) {}
                  //^ .../liballoc/vec.rs

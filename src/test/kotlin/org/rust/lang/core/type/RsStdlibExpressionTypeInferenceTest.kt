@@ -5,6 +5,8 @@
 
 package org.rust.lang.core.type
 
+import org.rust.ProjectDescriptor
+import org.rust.WithStdlibRustProjectDescriptor
 import org.rust.lang.core.psi.ext.ArithmeticAssignmentOp
 import org.rust.lang.core.psi.ext.ArithmeticOp
 import org.rust.lang.core.psi.ext.ComparisonOp
@@ -12,9 +14,8 @@ import org.rust.lang.core.psi.ext.EqualityOp
 import org.rust.lang.core.types.ty.TyFloat
 import org.rust.lang.core.types.ty.TyInteger
 
+@ProjectDescriptor(WithStdlibRustProjectDescriptor::class)
 class RsStdlibExpressionTypeInferenceTest : RsTypificationTestBase() {
-    override fun getProjectDescriptor() = WithStdlibRustProjectDescriptor
-
     fun `test RangeFull`() = stubOnlyTypeInfer("""
     //- main.rs
         fn main() {
@@ -129,6 +130,16 @@ class RsStdlibExpressionTypeInferenceTest : RsTypificationTestBase() {
         #![no_std]
         fn main() {
             let x = vec!(1, 2u16, 4, 8);
+            x;
+          //^ Vec<u16>
+        }
+    """)
+
+    fun `test empty vec!`() = stubOnlyTypeInfer("""
+    //- main.rs
+        fn main() {
+            let mut x = vec![];
+            x.push(0u16);
             x;
           //^ Vec<u16>
         }
@@ -493,7 +504,7 @@ class RsStdlibExpressionTypeInferenceTest : RsTypificationTestBase() {
         }
     """)
 
-    // https://github.com/intellij-rust/intellij-rust/issues/2514
+    /** Issue [#2514](https://github.com/intellij-rust/intellij-rust/issues/2514) */
     fun `test issue 2514`() = stubOnlyTypeInfer("""
     //- main.rs
         struct Foo {
@@ -506,5 +517,14 @@ class RsStdlibExpressionTypeInferenceTest : RsTypificationTestBase() {
                 b;
             } //^ i32
         }
+    """)
+
+    /** Issue [#2791](https://github.com/intellij-rust/intellij-rust/issues/2791)*/
+    fun `test issue 2791`() = stubOnlyTypeInfer("""
+    //- main.rs
+        fn main() {
+            let mut vec: Vec<i32> = Vec::new();
+            for x in &mut vec { x; }
+        }                     //^ &mut i32
     """)
 }

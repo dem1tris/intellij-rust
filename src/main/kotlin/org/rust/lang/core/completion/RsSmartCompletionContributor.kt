@@ -178,10 +178,7 @@ class RsSmartCompletionContributor : CompletionContributor() {
         // todo: need collect assoc functions
         var variants =
             collectCompletionVariants({ processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it) }, Filter(typeSet))
-                .map {
-                    if (it.psiElement is RsStructItem && struct != null) LookupElementDecorator.withInsertHandler(it, StructHandler(struct))
-                    else it
-                }
+                .map(WrapWithHandler(typeSet))
 
         variants += collectCompletionVariants({ processFunctionDeclarations(ImplLookup.relativeTo(path), retType, it) })
 
@@ -235,9 +232,24 @@ class RsSmartCompletionContributor : CompletionContributor() {
                 it is RsFunction && it.returnType.suite(typeSet) -> true
                 else -> false
             }
-        }.invoke(element)
+        }(element)
+    }
+
+    private class WrapWithHandler(typeSet: Set<Ty>) : (LookupElement) -> LookupElement {
+        val structs = typeSet.mapNotNull { (it as? TyAdt)?.item as? RsStructItem }
+        override fun invoke(element: LookupElement) = f@{ it: LookupElement ->
+            if (it.psiElement !is RsStructItem) return@f it
+            val struct = it.psiElement as RsStructItem
+            if (structs.contains(struct)) {
+                LookupElementDecorator.withInsertHandler(it, StructHandler(struct))
+            } else {
+                it
+            }
+        }(element)
     }
 }
+
+
 
 class StructHandler(val struct: RsStructItem) : InsertHandler<LookupElement?> {
     override fun handleInsert(context: InsertionContext, item: LookupElement?) {

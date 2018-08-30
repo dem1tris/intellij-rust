@@ -20,11 +20,8 @@ import org.rust.ide.formatter.processors.removeTrailingComma
 import org.rust.ide.icons.RsIcons
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
-import org.rust.lang.core.resolve.ImplLookup
-import org.rust.lang.core.resolve.collectCompletionVariants
+import org.rust.lang.core.resolve.*
 import org.rust.lang.core.resolve.indexes.RsLangItemIndex
-import org.rust.lang.core.resolve.processMethodCallExprResolveVariants
-import org.rust.lang.core.resolve.processPathResolveVariants
 import org.rust.lang.core.types.ty.Ty
 import org.rust.lang.core.types.ty.TyAdt
 import org.rust.lang.core.types.type
@@ -132,15 +129,14 @@ class RsSmartCompletionContributor : CompletionContributor() {
         // todo: need collect assoc functions
         var variants =
             collectCompletionVariants({ processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it) }, Filter(typeSet))
-        if (struct != null) {
-            variants += collectCompletionVariants({ processMethodCallExprResolveVariants(ImplLookup.relativeTo(struct), retType, it) }, Filter(typeSet))
-        }
-        variants
-            .map {
-                if (it.psiElement is RsStructItem && struct != null) LookupElementDecorator.withInsertHandler(it, StructHandler(struct))
-                else it
-            }
-            .forEach { result.addElement(it) }
+                .map {
+                    if (it.psiElement is RsStructItem && struct != null) LookupElementDecorator.withInsertHandler(it, StructHandler(struct))
+                    else it
+                }
+
+        variants += collectCompletionVariants({ processFunctionDeclarations(ImplLookup.relativeTo(struct), retType, it) }, Filter(typeSet))
+
+        variants.forEach { result.addElement(it) }
         result.addElement(LookupElementBuilder.create("onReturnable"))
     }
 

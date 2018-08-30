@@ -9,6 +9,7 @@ import com.intellij.codeInsight.completion.*
 import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.codeInsight.lookup.LookupElementBuilder
 import com.intellij.codeInsight.lookup.LookupElementDecorator
+import com.intellij.lang.parameterInfo.ParameterInfoUtils
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.patterns.ElementPattern
 import com.intellij.psi.PsiElement
@@ -20,10 +21,14 @@ import org.rust.ide.formatter.processors.removeTrailingComma
 import org.rust.ide.icons.RsIcons
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
-import org.rust.lang.core.resolve.*
+import org.rust.lang.core.resolve.ImplLookup
+import org.rust.lang.core.resolve.collectCompletionVariants
 import org.rust.lang.core.resolve.indexes.RsLangItemIndex
+import org.rust.lang.core.resolve.processFunctionDeclarations
+import org.rust.lang.core.resolve.processPathResolveVariants
 import org.rust.lang.core.types.ty.Ty
 import org.rust.lang.core.types.ty.TyAdt
+import org.rust.lang.core.types.ty.TyFunction
 import org.rust.lang.core.types.type
 
 class RsSmartCompletionContributor : CompletionContributor() {
@@ -99,8 +104,52 @@ class RsSmartCompletionContributor : CompletionContributor() {
     }
 
     private fun onValueArgumentList(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
-        result.addElement(LookupElementBuilder.create("onVAL"))
         println("RsSmartCompletionContributor.onValueArgumentList")
+        val path = parameters.position.ancestorStrict<RsPath>() ?: TODO()
+        val pexpr = path.ancestorStrict<RsPathExpr>() ?: TODO()
+        val parameterList = pexpr.ancestorStrict<RsValueArgumentList>() ?: TODO()
+        val index = ParameterInfoUtils.getCurrentParameterIndex(
+            parameterList.node,
+            parameters.offset,
+            RsElementTypes.COMMA)
+        val call = parameterList.parent
+        val function = when (call) {
+            is RsCallExpr -> (call.expr as? RsPathExpr)?.path?.reference?.resolve()
+            is RsMethodCall -> call.reference.resolve()
+            else -> null
+        } ?: TODO()
+        val typeSet = setOf<Ty>().toMutableSet()
+        if (function is RsFunction) {
+            function.valueParameters.filterIndexed { ind, _ ->
+                if (function.selfParameter == null) index == ind
+                else index == ind - 1
+            }.map {
+                it.typeReference?.type ?: TODO("NO TY")
+            }.map {
+                typeSet.add(it)
+            }
+        } else {
+            val tyFunction = (call as? RsCallExpr)?.expr?.type as? TyFunction ?: TODO()
+            val type = tyFunction.paramTypes.getOrNull(index) ?: TODO()
+            typeSet.add(type)
+        }
+
+        val structs = typeSet.mapNotNull { ((it as? TyAdt)?.item as? RsStructItem) }
+        var variants =
+            collectCompletionVariants(
+                { processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it) },
+                Filter(typeSet))
+                .map {
+                    if (it.psiElement is RsStructItem && !structs.isEmpty()) {
+                        val struct = structs.find { item ->
+                            item == (it.psiElement as? RsStructItem)
+                        }
+                        if (struct != null) LookupElementDecorator.withInsertHandler(it, StructHandler(struct))
+                        else it
+                    } else it
+                }
+        variants.forEach { result.addElement(it) }
+        result.addElement(LookupElementBuilder.create("onVAL"))
     }
 
     private fun checkReturnable(position: PsiElement): Boolean {
@@ -134,7 +183,7 @@ class RsSmartCompletionContributor : CompletionContributor() {
                     else it
                 }
 
-        variants += collectCompletionVariants({ processFunctionDeclarations(ImplLookup.relativeTo(struct), retType, it) }, Filter(typeSet))
+        variants += collectCompletionVariants({ processFunctionDeclarations(ImplLookup.relativeTo(path), retType, it) })
 
         variants.forEach { result.addElement(it) }
         result.addElement(LookupElementBuilder.create("onReturnable"))

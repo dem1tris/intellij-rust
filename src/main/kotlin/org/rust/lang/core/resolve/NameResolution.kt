@@ -636,9 +636,9 @@ private fun processMethodDeclarationsWithDeref(lookup: ImplLookup, receiver: Ty,
 }
 
 fun processFunctionDeclarations(lookup: ImplLookup, receiver: Ty, processor: RsResolveProcessor): Boolean {
-    return lookup.coercionSequence(receiver).any { ty ->
+    return lookup.coercionSequence(receiver).withIndex().any { (i, ty) ->
         val functionProcessor: (AssocItemScopeEntry) -> Boolean = { (name, element, _, impl) ->
-            element is RsFunction && processor(AssocItemScopeEntry(name, element, impl = impl))
+            element is RsFunction && processor(MethodResolveVariant(name, element, impl, ty, i))
         }
         processAssociatedItems(lookup, ty, VALUES, functionProcessor)
     }

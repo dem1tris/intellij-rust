@@ -19,7 +19,6 @@ import com.intellij.util.ProcessingContext
 import one.util.streamex.StreamEx
 import org.rust.ide.formatter.impl.CommaList
 import org.rust.ide.formatter.processors.removeTrailingComma
-import org.rust.ide.icons.RsIcons
 import org.rust.ide.presentation.shortPresentableText
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
@@ -76,27 +75,6 @@ class RsSmartCompletionContributor : CompletionContributor() {
         }
     }
 
-    // TODO: as template
-    private fun RsStructItem.buildLiteral(factory: RsPsiFactory): LookupElement {
-        return LookupElementBuilder
-            .create(factory.createStructLiteral(this.name!!), this.name!!)
-            .withTailText(" { ... }")
-            .bold()
-            .withIcon(RsIcons.STRUCT)
-            .withInsertHandler(StructHandler(this))
-    }
-
-    private fun RsStructItem.newCalls(factory: RsPsiFactory): List<LookupElement> {
-        val newFuncs = this.searchForImplementations().forEach {
-
-        }
-        val args: List<RsExpr> = listOf()
-        return listOf(LookupElementBuilder.create(
-            factory.createAssocFunctionCall(this.name!!, "new", args),
-            "${this.name}::new(${args.joinToString()})")
-            .withIcon(RsIcons.ASSOC_FUNCTION))
-    }
-
     private fun checkValueArgumentList(position: PsiElement): Boolean {
         return PsiTreeUtil.getParentOfType(position, RsValueArgumentList::class.java, true,
             RsCondition::class.java) != null
@@ -104,9 +82,9 @@ class RsSmartCompletionContributor : CompletionContributor() {
 
     private fun onValueArgumentList(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
         println("RsSmartCompletionContributor.onValueArgumentList")
-        val path = parameters.position.ancestorStrict<RsPath>() ?: TODO()
-        val pexpr = path.ancestorStrict<RsPathExpr>() ?: TODO()
-        val parameterList = pexpr.ancestorStrict<RsValueArgumentList>() ?: TODO()
+        val path = parameters.position.ancestorStrict<RsPath>() ?: return
+        val pexpr = path.ancestorStrict<RsPathExpr>() ?: return
+        val parameterList = pexpr.ancestorStrict<RsValueArgumentList>() ?: return
         val index = ParameterInfoUtils.getCurrentParameterIndex(
             parameterList.node,
             parameters.offset,
@@ -116,7 +94,7 @@ class RsSmartCompletionContributor : CompletionContributor() {
             is RsCallExpr -> (call.expr as? RsPathExpr)?.path?.reference?.resolve()
             is RsMethodCall -> call.reference.resolve()
             else -> null
-        } ?: TODO()
+        } ?: return
         val typeSet = setOf<Ty>().toMutableSet()
         if (function is RsFunction) {
             function.valueParameters.filterIndexed { ind, _ ->
@@ -128,8 +106,8 @@ class RsSmartCompletionContributor : CompletionContributor() {
                 typeSet.add(it)
             }
         } else {
-            val tyFunction = (call as? RsCallExpr)?.expr?.type as? TyFunction ?: TODO()
-            val type = tyFunction.paramTypes.getOrNull(index) ?: TODO()
+            val tyFunction = (call as? RsCallExpr)?.expr?.type as? TyFunction ?: return
+            val type = tyFunction.paramTypes.getOrNull(index) ?: return
             typeSet.add(type)
         }
 
@@ -221,7 +199,6 @@ class RsSmartCompletionContributor : CompletionContributor() {
                     }
                     is Trait -> LookupElementDecorator.withRenderer(
                         createLookupElement(it, it.name!!),
-                        // TODO: Decorator erase default handler? yes... need fix
                         object : Renderer() {
                             override fun renderElement(element: LookupElementDecorator<LookupElement>?,
                                                        presentation: LookupElementPresentation?) {
@@ -264,7 +241,6 @@ class RsSmartCompletionContributor : CompletionContributor() {
                 is RsStructItem -> {
                     LookupElementDecorator.withInsertHandler(element, StructHandler(el))
                 }
-                // TODO: () from trait assoc fun somehow disappeared
                 is RsFunction -> {
                     if (el.isAssocFn) {
                         LookupElementDecorator.withInsertHandler(element, AssocFunctionHandler(el))
@@ -301,6 +277,7 @@ class AssocFunctionHandler(val function: RsFunction) : InsertHandler<LookupEleme
 /* *
  * Add literal body and fields with `()` as placeholder, move caret into first `()`
  * */
+// TODO: build literal as template for jumping over the fields by Tab
 class StructHandler(val struct: RsStructItem) : InsertHandler<LookupElement?> {
     override fun handleInsert(context: InsertionContext, item: LookupElement?) {
         val factory = RsPsiFactory(context.project)

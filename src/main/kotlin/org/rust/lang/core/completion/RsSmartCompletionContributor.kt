@@ -7,9 +7,7 @@ package org.rust.lang.core.completion
 
 import com.intellij.codeInsight.AutoPopupController
 import com.intellij.codeInsight.completion.*
-import com.intellij.codeInsight.lookup.LookupElement
-import com.intellij.codeInsight.lookup.LookupElementBuilder
-import com.intellij.codeInsight.lookup.LookupElementDecorator
+import com.intellij.codeInsight.lookup.*
 import com.intellij.lang.parameterInfo.ParameterInfoUtils
 import com.intellij.openapi.editor.EditorModificationUtil
 import com.intellij.openapi.progress.ProgressManager
@@ -18,21 +16,26 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.TokenType
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
+import one.util.streamex.StreamEx
 import org.rust.ide.formatter.impl.CommaList
 import org.rust.ide.formatter.processors.removeTrailingComma
 import org.rust.ide.icons.RsIcons
 import org.rust.ide.presentation.shortPresentableText
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
+import org.rust.lang.core.psi.ext.RsAbstractableOwner.Impl
+import org.rust.lang.core.psi.ext.RsAbstractableOwner.Trait
 import org.rust.lang.core.resolve.ImplLookup
 import org.rust.lang.core.resolve.collectCompletionVariants
 import org.rust.lang.core.resolve.indexes.RsLangItemIndex
-import org.rust.lang.core.resolve.processFunctionDeclarations
+import org.rust.lang.core.resolve.processMethodCallExprResolveVariants
 import org.rust.lang.core.resolve.processPathResolveVariants
 import org.rust.lang.core.types.ty.Ty
 import org.rust.lang.core.types.ty.TyAdt
 import org.rust.lang.core.types.ty.TyFunction
 import org.rust.lang.core.types.type
+
+typealias Renderer = LookupElementRenderer<LookupElementDecorator<LookupElement>?>
 
 class RsSmartCompletionContributor : CompletionContributor() {
     /**
@@ -130,15 +133,7 @@ class RsSmartCompletionContributor : CompletionContributor() {
             typeSet.add(type)
         }
 
-        var variants =
-            collectCompletionVariants({
-                processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it)
-            }, Filter(typeSet)).map(WrapWithHandler(typeSet))
-        typeSet.forEach { ty ->
-            variants += collectCompletionVariants({
-                processFunctionDeclarations(ImplLookup.relativeTo(path), ty, it)
-            }, Filter(typeSet)).map(WrapWithHandler(typeSet))
-        }
+        val variants = getVariants(path, typeSet)
         variants.forEach { result.addElement(it) }
         result.addElement(LookupElementBuilder.create("onVAL"))
     }
@@ -164,18 +159,7 @@ class RsSmartCompletionContributor : CompletionContributor() {
         val path = parameters.position.ancestorStrict<RsPath>() ?: return
         val retType = parameters.position.ancestorStrict<RsFunction>()?.returnType ?: return
         val typeSet = setOf(retType).toMutableSet()
-
-        // TODO: need collect assoc functions
-        var variants =
-            collectCompletionVariants({
-                processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it)
-            }, Filter(typeSet)).map(WrapWithHandler(typeSet))
-
-        typeSet.forEach { ty ->
-            variants += collectCompletionVariants({
-                processFunctionDeclarations(ImplLookup.relativeTo(path), ty, it)
-            }, Filter(typeSet)).map(WrapWithHandler(typeSet))
-        }
+        val variants = getVariants(path, typeSet)
 
         variants.forEach { result.addElement(it) }
         result.addElement(LookupElementBuilder.create("onReturnable"))
@@ -211,11 +195,55 @@ class RsSmartCompletionContributor : CompletionContributor() {
         val a = RsLangItemIndex
     }
 
+    // TODO: need collect assoc functions from all impl blocks
+    private fun getVariants(path: RsPath, typeSet: Set<Ty>): List<LookupElement> {
+        var variants =
+            collectCompletionVariants({
+                processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it)
+            }, Filter(typeSet)).map(WrapWithHandler())
+
+        typeSet.forEach { ty ->
+            variants += collectCompletionVariants({
+                processMethodCallExprResolveVariants(ImplLookup.relativeTo(path), ty, it)
+            }, Filter(typeSet)).map(WrapWithHandler())
+        }
+
+        StreamEx
+            .ofTree(path.containingFile as PsiElement) { el -> StreamEx.of(*el.children) }
+            .select(RsFunction::class.java)
+            .filter(Filter(typeSet))
+            .map {
+                val owner = it.owner
+                when (owner) {
+                    is Impl -> {
+                        val name = owner.impl.typeReference!!.type.shortPresentableText + "::" + it.name!!
+                        createLookupElement(it, name)
+                    }
+                    is Trait -> LookupElementDecorator.withRenderer(
+                        createLookupElement(it, it.name!!),
+                        // TODO: Decorator erase default handler? yes... need fix
+                        object : Renderer() {
+                            override fun renderElement(element: LookupElementDecorator<LookupElement>?,
+                                                       presentation: LookupElementPresentation?) {
+                                element?.delegate?.renderElement(presentation)
+                                presentation?.appendTailText(" of ${owner.trait.name}", true)
+                            }
+                        }
+                    )
+                    else -> createLookupElement(it, it.name!!)
+                }
+                // TODO: check if any struct from this file implement that trait
+            }
+            .map(WrapWithHandler())
+            .forEach { variants += it }
+        return variants
+    }
+
 
     private class Filter(val typeSet: Set<Ty>) : (RsElement) -> Boolean {
         private fun Ty.suite(typeSet: Set<Ty>): Boolean {
             if (!typeSet.contains(this)) return false
-            if (this is TyAdt && typeSet.none { this.item == (it as? TyAdt)?.item }) return false
+            if (this is TyAdt && typeSet.none { (it as? TyAdt)?.item == this.item }) return false
             return true
         }
 
@@ -229,13 +257,14 @@ class RsSmartCompletionContributor : CompletionContributor() {
         }
     }
 
-    private class WrapWithHandler(typeSet: Set<Ty>) : (LookupElement) -> LookupElement {
+    private class WrapWithHandler() : (LookupElement) -> LookupElement {
         override fun invoke(element: LookupElement): LookupElement {
             val el = element.psiElement
             return when (el) {
                 is RsStructItem -> {
                     LookupElementDecorator.withInsertHandler(element, StructHandler(el))
                 }
+                // TODO: () from trait assoc fun somehow disappeared
                 is RsFunction -> {
                     if (el.isAssocFn) {
                         LookupElementDecorator.withInsertHandler(element, AssocFunctionHandler(el))
@@ -255,12 +284,9 @@ class RsSmartCompletionContributor : CompletionContributor() {
  * */
 class AssocFunctionHandler(val function: RsFunction) : InsertHandler<LookupElement?> {
     override fun handleInsert(context: InsertionContext, item: LookupElement?) {
-        val factory = RsPsiFactory(context.project)
         val offset = context.editor.caretModel.offset
         val pathExpr = context.file.findElementAt(offset)
             ?.prevSibling as? RsPathExpr ?: return
-        context.document.insertString(context.selectionEndOffset - pathExpr.textLength,
-            function.returnType.shortPresentableText + RsElementTypes.COLONCOLON)
         if (!context.nextCharIs('(')) {
             context.document.insertString(context.selectionEndOffset, "()")
         }
@@ -295,10 +321,8 @@ class StructHandler(val struct: RsStructItem) : InsertHandler<LookupElement?> {
         val inserted = context.file.findElementAt(offset)
             ?.nextSibling as? RsStructLiteralBody ?: return
         declaredFields.map {
-            println("fld map")
             factory.createStructLiteralField(it.name!!, factory.createExpression("()"))
         }.forEach {
-            println("fld foreach")
             val added = inserted.addBefore(it, inserted.rbrace) as RsStructLiteralField
             if (firstAdded == null) {
                 firstAdded = added

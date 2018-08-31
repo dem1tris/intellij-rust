@@ -16,6 +16,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.TokenType
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
+import one.util.streamex.StreamEx
 import org.rust.ide.formatter.impl.CommaList
 import org.rust.ide.formatter.processors.removeTrailingComma
 import org.rust.ide.icons.RsIcons
@@ -53,8 +54,6 @@ class RsSmartCompletionContributor : CompletionContributor() {
         if (parameters.completionType != CompletionType.SMART) return
         val context = ProcessingContext()
         val position = parameters.position
-        //println(parameters.editor.document.text)
-        //println(position.containingFile.text)
         println(position.textOffset)
         println(position.text)
         println(position.elementType)
@@ -70,11 +69,6 @@ class RsSmartCompletionContributor : CompletionContributor() {
             checkBoolean(position) -> onBoolean(parameters, context, result)
             checkLet(position) -> onLet(parameters, context, result)
         }
-
-
-        // GlobalSearchScope
-        // parameters.position
-        // result.addElement(_.buildLiteral(psiFactory))
     }
 
     // todo: as template
@@ -146,7 +140,6 @@ class RsSmartCompletionContributor : CompletionContributor() {
         variants.forEach { result.addElement(it) }
         result.addElement(LookupElementBuilder.create("onVAL"))
     }
-
 
     private fun checkReturnable(position: PsiElement): Boolean {
         println("RsSmartCompletionContributor.checkReturnable")
@@ -224,22 +217,24 @@ class RsSmartCompletionContributor : CompletionContributor() {
             return true
         }
 
-        override fun invoke(element: RsElement) = { it: RsElement ->
-            println("cv ${it.elementType}:$it:${(it as? RsFunction)?.name ?: ""}")
-            when {
-                it is RsStructItem && it.declaredType.suite(typeSet) -> true
-                it is RsPatBinding && it.type.suite(typeSet) -> true
-                it is RsFunction && it.returnType.suite(typeSet) -> true
+        override fun invoke(element: RsElement): Boolean {
+            return when {
+                element is RsStructItem && element.declaredType.suite(typeSet) -> true
+                element is RsPatBinding && element.type.suite(typeSet) -> true
+                element is RsFunction && element.returnType.suite(typeSet) -> true
                 else -> false
             }
-        }(element)
+        }
     }
 
+    // is it legal to compare names?
     private class WrapWithHandler(typeSet: Set<Ty>) : (LookupElement) -> LookupElement {
         val structs = typeSet.mapNotNull { (it as? TyAdt)?.item as? RsStructItem }
         override fun invoke(element: LookupElement): LookupElement {
+            structs.forEach { println(it.identifier)}
             val struct = element.psiElement as? RsStructItem ?: return element
-            return if (structs.contains(struct)) {
+            println("struct = ${struct.identifier}")
+            return if (structs.any {it.name == struct.name }) {
                 LookupElementDecorator.withInsertHandler(element, StructHandler(struct))
             } else {
                 element

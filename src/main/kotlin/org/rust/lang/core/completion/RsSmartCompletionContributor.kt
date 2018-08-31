@@ -122,10 +122,10 @@ class RsSmartCompletionContributor : CompletionContributor() {
         val pexpr = path.parent as? RsPathExpr ?: return false
         val retExpr = pexpr.ancestorStrict<RsRetExpr>()
         val function = pexpr.ancestorStrict<RsFunction>() ?: return false
+        // Check if position is on "right edge" of function body
         return position.rightLeaves
             .filter { function.isAncestorOf(it) }
             .all {
-                println(it.elementType)
                 it.elementType == RsElementTypes.RBRACE
                     || it.elementType == TokenType.WHITE_SPACE
                     || RS_COMMENTS.contains(it.elementType)
@@ -216,7 +216,10 @@ class RsSmartCompletionContributor : CompletionContributor() {
         return variants
     }
 
-
+    /**
+     * Filter RsElements by type. Return true if type is "suitable".
+     * This concept is open to expansion and refinement.
+     */
     private class Filter(val typeSet: Set<Ty>) : (RsElement) -> Boolean {
         private fun Ty.suite(typeSet: Set<Ty>): Boolean {
             if (!typeSet.contains(this)) return false
@@ -234,6 +237,9 @@ class RsSmartCompletionContributor : CompletionContributor() {
         }
     }
 
+    /**
+     * Add custom handler
+     */
     private class WrapWithHandler() : (LookupElement) -> LookupElement {
         override fun invoke(element: LookupElement): LookupElement {
             val el = element.psiElement
@@ -255,9 +261,9 @@ class RsSmartCompletionContributor : CompletionContributor() {
 }
 
 
-/* *
+/**
  * Add `Type::` before associated function name, and `()` after
- * */
+ */
 class AssocFunctionHandler(val function: RsFunction) : InsertHandler<LookupElement?> {
     override fun handleInsert(context: InsertionContext, item: LookupElement?) {
         val offset = context.editor.caretModel.offset
@@ -274,9 +280,9 @@ class AssocFunctionHandler(val function: RsFunction) : InsertHandler<LookupEleme
     }
 }
 
-/* *
+/**
  * Add literal body and fields with `()` as placeholder, move caret into first `()`
- * */
+ */
 // TODO: build literal as template for jumping over the fields by Tab
 class StructHandler(val struct: RsStructItem) : InsertHandler<LookupElement?> {
     override fun handleInsert(context: InsertionContext, item: LookupElement?) {

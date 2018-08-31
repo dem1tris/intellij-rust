@@ -5,21 +5,23 @@
 
 package org.rust.lang.core.completion
 
+import com.intellij.codeInsight.AutoPopupController
 import com.intellij.codeInsight.completion.*
 import com.intellij.codeInsight.lookup.LookupElement
 import com.intellij.codeInsight.lookup.LookupElementBuilder
 import com.intellij.codeInsight.lookup.LookupElementDecorator
 import com.intellij.lang.parameterInfo.ParameterInfoUtils
+import com.intellij.openapi.editor.EditorModificationUtil
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.patterns.ElementPattern
 import com.intellij.psi.PsiElement
 import com.intellij.psi.TokenType
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
-import one.util.streamex.StreamEx
 import org.rust.ide.formatter.impl.CommaList
 import org.rust.ide.formatter.processors.removeTrailingComma
 import org.rust.ide.icons.RsIcons
+import org.rust.ide.presentation.shortPresentableText
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
 import org.rust.lang.core.resolve.ImplLookup
@@ -48,8 +50,8 @@ class RsSmartCompletionContributor : CompletionContributor() {
      * ensure you call [com.intellij.openapi.progress.ProgressManager.checkCanceled] often enough so that the completion process
      * can be cancelled smoothly when the user begins to type in the editor.
      */
-    // todo: add single completion variant <space> in case of e.g. `return/*caret*/` invocation
-    // todo: call .checkCanceled more often
+    // TODO: add single completion variant <space> in case of e.g. `return/*caret*/` invocation
+    // TODO: call .checkCanceled more often
     override fun fillCompletionVariants(parameters: CompletionParameters, result: CompletionResultSet) {
         if (parameters.completionType != CompletionType.SMART) return
         val context = ProcessingContext()
@@ -71,7 +73,7 @@ class RsSmartCompletionContributor : CompletionContributor() {
         }
     }
 
-    // todo: as template
+    // TODO: as template
     private fun RsStructItem.buildLiteral(factory: RsPsiFactory): LookupElement {
         return LookupElementBuilder
             .create(factory.createStructLiteral(this.name!!), this.name!!)
@@ -163,7 +165,7 @@ class RsSmartCompletionContributor : CompletionContributor() {
         val retType = parameters.position.ancestorStrict<RsFunction>()?.returnType ?: return
         val typeSet = setOf(retType).toMutableSet()
 
-        // todo: need collect assoc functions
+        // TODO: need collect assoc functions
         var variants =
             collectCompletionVariants({
                 processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it)
@@ -227,23 +229,52 @@ class RsSmartCompletionContributor : CompletionContributor() {
         }
     }
 
-    // is it legal to compare names?
     private class WrapWithHandler(typeSet: Set<Ty>) : (LookupElement) -> LookupElement {
-        val structs = typeSet.mapNotNull { (it as? TyAdt)?.item as? RsStructItem }
         override fun invoke(element: LookupElement): LookupElement {
-            structs.forEach { println(it.identifier)}
-            val struct = element.psiElement as? RsStructItem ?: return element
-            println("struct = ${struct.identifier}")
-            return if (structs.any {it.name == struct.name }) {
-                LookupElementDecorator.withInsertHandler(element, StructHandler(struct))
-            } else {
-                element
+            val el = element.psiElement
+            return when (el) {
+                is RsStructItem -> {
+                    LookupElementDecorator.withInsertHandler(element, StructHandler(el))
+                }
+                is RsFunction -> {
+                    if (el.isAssocFn) {
+                        LookupElementDecorator.withInsertHandler(element, AssocFunctionHandler(el))
+                    } else {
+                        element
+                    }
+                }
+                else -> element
             }
         }
     }
 }
 
 
+/* *
+ * Add `Type::` before associated function name, and `()` after
+ * */
+class AssocFunctionHandler(val function: RsFunction) : InsertHandler<LookupElement?> {
+    override fun handleInsert(context: InsertionContext, item: LookupElement?) {
+        val factory = RsPsiFactory(context.project)
+        val offset = context.editor.caretModel.offset
+        val pathExpr = context.file.findElementAt(offset)
+            ?.prevSibling as? RsPathExpr ?: return
+        context.document.insertString(context.selectionEndOffset - pathExpr.textLength,
+            function.returnType.shortPresentableText + RsElementTypes.COLONCOLON)
+        if (!context.nextCharIs('(')) {
+            context.document.insertString(context.selectionEndOffset, "()")
+        }
+        EditorModificationUtil.moveCaretRelatively(context.editor, if (function.valueParameters.isEmpty()) 2 else 1)
+        if (!function.valueParameters.isEmpty()) {
+            AutoPopupController.getInstance(function.project)?.autoPopupParameterInfo(context.editor, function)
+        }
+
+    }
+}
+
+/* *
+ * Add literal body and fields with `()` as placeholder, move caret into first `()`
+ * */
 class StructHandler(val struct: RsStructItem) : InsertHandler<LookupElement?> {
     override fun handleInsert(context: InsertionContext, item: LookupElement?) {
         val factory = RsPsiFactory(context.project)
@@ -280,7 +311,7 @@ class StructHandler(val struct: RsStructItem) : InsertHandler<LookupElement?> {
         }
         CommaList.forElement(inserted.elementType)?.removeTrailingComma(inserted)
 
-        // `field: (/*caret*/)`
+        // `firstField: (/*caret*/)`
         if (firstAdded != null) {
             context.editor.caretModel.moveToOffset(firstAdded?.expr!!.textOffset + 1)
         }

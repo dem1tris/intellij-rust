@@ -58,14 +58,6 @@ class RsSmartCompletionContributor : CompletionContributor() {
         if (parameters.completionType != CompletionType.SMART) return
         val context = ProcessingContext()
         val position = parameters.position
-        println(position.textOffset)
-        println(position.text)
-        println(position.elementType)
-        println("position = ${position}")
-        println("position.parent = ${position.parent}")
-        println("position.parent.parent = ${position.parent.parent}")
-        println("position.parent.parent.prev = ${position.parent.parent.prevSibling}")
-        println("position.parent.parent.next = ${position.parent.parent.nextSibling}")
         ProgressManager.checkCanceled()
         when {
             checkValueArgumentList(position) -> onValueArgumentList(parameters, context, result)
@@ -81,7 +73,6 @@ class RsSmartCompletionContributor : CompletionContributor() {
     }
 
     private fun onValueArgumentList(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
-        println("RsSmartCompletionContributor.onValueArgumentList")
         val path = parameters.position.ancestorStrict<RsPath>() ?: return
         val pexpr = path.ancestorStrict<RsPathExpr>() ?: return
         val parameterList = pexpr.ancestorStrict<RsValueArgumentList>() ?: return
@@ -117,7 +108,6 @@ class RsSmartCompletionContributor : CompletionContributor() {
     }
 
     private fun checkReturnable(position: PsiElement): Boolean {
-        println("RsSmartCompletionContributor.checkReturnable")
         val path = position.parent as? RsPath ?: return false
         val pexpr = path.parent as? RsPathExpr ?: return false
         val retExpr = pexpr.ancestorStrict<RsRetExpr>()
@@ -133,7 +123,6 @@ class RsSmartCompletionContributor : CompletionContributor() {
     }
 
     private fun onReturnable(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
-        println("RsSmartCompletionContributor.onReturnable")
         val path = parameters.position.ancestorStrict<RsPath>() ?: return
         val retType = parameters.position.ancestorStrict<RsFunction>()?.returnType ?: return
         val typeSet = setOf(retType).toMutableSet()
@@ -145,7 +134,6 @@ class RsSmartCompletionContributor : CompletionContributor() {
 
 
     private fun checkBoolean(position: PsiElement): Boolean {
-        println("RsSmartCompletionContributor.checkBoolean")
         val path = position.parent as? RsPath ?: return false
         val pexpr = path.parent as? RsPathExpr ?: return false
         return pexpr.ancestorStrict<RsCondition>() != null
@@ -153,12 +141,10 @@ class RsSmartCompletionContributor : CompletionContributor() {
 
     private fun onBoolean(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
         result.addElement(LookupElementBuilder.create("onBoolean"))
-        println("RsSmartCompletionContributor.onBoolean")
     }
 
 
     private fun checkLet(position: PsiElement): Boolean {
-        println("RsSmartCompletionContributor.checkLet")
         val path = position.parent as? RsPath ?: return false
         val pexpr = path.parent as? RsPathExpr ?: return false
         val letDecl = PsiTreeUtil.getParentOfType(pexpr, RsLetDecl::class.java, true,
@@ -169,7 +155,6 @@ class RsSmartCompletionContributor : CompletionContributor() {
 
     private fun onLet(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
         result.addElement(LookupElementBuilder.create("onLet"))
-        println("RsSmartCompletionContributor.onLet")
         val a = RsLangItemIndex
     }
 

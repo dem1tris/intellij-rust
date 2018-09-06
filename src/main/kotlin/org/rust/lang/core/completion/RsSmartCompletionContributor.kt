@@ -11,7 +11,6 @@ import com.intellij.codeInsight.lookup.*
 import com.intellij.lang.parameterInfo.ParameterInfoUtils
 import com.intellij.openapi.editor.EditorModificationUtil
 import com.intellij.openapi.progress.ProgressManager
-import com.intellij.patterns.ElementPattern
 import com.intellij.psi.PsiElement
 import com.intellij.psi.TokenType
 import com.intellij.psi.search.GlobalSearchScope
@@ -33,6 +32,7 @@ import org.rust.lang.core.resolve.processMethodCallExprResolveVariants
 import org.rust.lang.core.resolve.processPathResolveVariants
 import org.rust.lang.core.types.ty.Ty
 import org.rust.lang.core.types.ty.TyAdt
+import org.rust.lang.core.types.ty.TyBool
 import org.rust.lang.core.types.ty.TyFunction
 import org.rust.lang.core.types.type
 import org.rust.openapiext.getElements
@@ -40,21 +40,7 @@ import org.rust.openapiext.getElements
 typealias Renderer = LookupElementRenderer<LookupElementDecorator<LookupElement>?>
 
 class RsSmartCompletionContributor : CompletionContributor() {
-    /**
-     * The main contributor method that is supposed to provide completion variants to result, based on completion parameters.
-     * The default implementation looks for [CompletionProvider]s you could register by
-     * invoking [.extend] from your contributor constructor,
-     * matches the desired completion type and [ElementPattern] with actual ones, and, depending on it, invokes those
-     * completion providers.
-     *
-     *
-     *
-     * If you want to implement this functionality directly by overriding this method, the following is for you.
-     * Always check that parameters match your situation, and that completion type ([CompletionParameters.getCompletionType]
-     * is of your favourite kind. This method is run inside a read action. If you do any long activity non-related to PSI in it, please
-     * ensure you call [com.intellij.openapi.progress.ProgressManager.checkCanceled] often enough so that the completion process
-     * can be cancelled smoothly when the user begins to type in the editor.
-     */
+
     // TODO: add single completion variant <space> in case of e.g. `return/*caret*/` invocation
     // TODO: call .checkCanceled more often
     override fun fillCompletionVariants(parameters: CompletionParameters, result: CompletionResultSet) {
@@ -63,14 +49,14 @@ class RsSmartCompletionContributor : CompletionContributor() {
         val position = parameters.position
         ProgressManager.checkCanceled()
         when {
-            checkValueArgumentList(position) -> onValueArgumentList(parameters, context, result)
-            checkReturnable(position) -> onReturnable(parameters, context, result)
-            checkBoolean(position) -> onBoolean(parameters, context, result)
-            checkLet(position) -> onLet(parameters, context, result)
+            isValueArgumentList(position) -> onValueArgumentList(parameters, context, result)
+            isReturnable(position) -> onReturnable(parameters, context, result)
+            isCondition(position) -> onCondition(parameters, context, result)
+            isLet(position) -> onLet(parameters, context, result)
         }
     }
 
-    private fun checkValueArgumentList(position: PsiElement): Boolean {
+    private fun isValueArgumentList(position: PsiElement): Boolean {
         return PsiTreeUtil.getParentOfType(position, RsValueArgumentList::class.java, true,
             RsCondition::class.java) != null
     }
@@ -110,7 +96,8 @@ class RsSmartCompletionContributor : CompletionContributor() {
         result.addElement(LookupElementBuilder.create("onVAL"))
     }
 
-    private fun checkReturnable(position: PsiElement): Boolean {
+    private fun isReturnable(position: PsiElement): Boolean {
+        println("RsSmartCompletionContributor.isReturnable")
         val path = position.parent as? RsPath ?: return false
         val pexpr = path.parent as? RsPathExpr ?: return false
         val retExpr = pexpr.ancestorStrict<RsRetExpr>()
@@ -136,18 +123,25 @@ class RsSmartCompletionContributor : CompletionContributor() {
     }
 
 
-    private fun checkBoolean(position: PsiElement): Boolean {
+    private fun isCondition(position: PsiElement): Boolean {
+        println("RsSmartCompletionContributor.isCondition")
         val path = position.parent as? RsPath ?: return false
         val pexpr = path.parent as? RsPathExpr ?: return false
         return pexpr.ancestorStrict<RsCondition>() != null
     }
 
-    private fun onBoolean(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
-        result.addElement(LookupElementBuilder.create("onBoolean"))
+    private fun onCondition(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
+        val path = parameters.position.ancestorStrict<RsPath>() ?: return
+        val typeSet = setOf<Ty>(TyBool).toMutableSet()
+        val variants = getVariants(parameters, path, typeSet)
+
+        variants.forEach { result.addElement(it) }
+        result.addElement(LookupElementBuilder.create("onCondition"))
+        println("RsSmartCompletionContributor.onCondition")
     }
 
-
-    private fun checkLet(position: PsiElement): Boolean {
+    private fun isLet(position: PsiElement): Boolean {
+        println("RsSmartCompletionContributor.isLet")
         val path = position.parent as? RsPath ?: return false
         val pexpr = path.parent as? RsPathExpr ?: return false
         val letDecl = PsiTreeUtil.getParentOfType(pexpr, RsLetDecl::class.java, true,
@@ -157,6 +151,11 @@ class RsSmartCompletionContributor : CompletionContributor() {
     }
 
     private fun onLet(parameters: CompletionParameters, context: ProcessingContext, result: CompletionResultSet) {
+        val path = parameters.position.ancestorStrict<RsPath>() ?: return
+        val pexpr = path.parent as? RsPathExpr ?: return
+        val letDecl = PsiTreeUtil.getParentOfType(pexpr, RsLetDecl::class.java, true,
+            RsCondition::class.java) ?: return
+        val typeSet = setOf<Ty>().toMutableSet()
         result.addElement(LookupElementBuilder.create("onLet"))
         val a = RsLangItemIndex
     }

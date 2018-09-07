@@ -16,6 +16,7 @@ import com.intellij.psi.TokenType
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
+import com.intellij.util.containers.nullize
 import one.util.streamex.StreamEx
 import org.rust.ide.formatter.impl.CommaList
 import org.rust.ide.formatter.processors.removeTrailingComma
@@ -41,7 +42,6 @@ typealias Renderer = LookupElementRenderer<LookupElementDecorator<LookupElement>
 
 class RsSmartCompletionContributor : CompletionContributor() {
 
-    // TODO: add single completion variant <space> in case of e.g. `return/*caret*/` invocation
     // TODO: call .checkCanceled more often
     override fun fillCompletionVariants(parameters: CompletionParameters, result: CompletionResultSet) {
         if (parameters.completionType != CompletionType.SMART) return
@@ -165,13 +165,15 @@ class RsSmartCompletionContributor : CompletionContributor() {
         var variants =
             collectCompletionVariants({
                 processPathResolveVariants(ImplLookup.relativeTo(path), path, true, it)
-            }, Filter(typeSet)).map(WrapWithHandler())
+            }, Filter(typeSet)).map(::withCustomHandler)
+        ProgressManager.checkCanceled()
 
         typeSet.forEach { ty ->
             variants += collectCompletionVariants({
                 processMethodCallExprResolveVariants(ImplLookup.relativeTo(path), ty, it)
-            }, Filter(typeSet)).map(WrapWithHandler())
+            }, Filter(typeSet)).map(::withCustomHandler)
         }
+        ProgressManager.checkCanceled()
 
         StreamEx
             .ofTree(path.containingFile as PsiElement) { el -> StreamEx.of(*el.children) }
@@ -182,23 +184,37 @@ class RsSmartCompletionContributor : CompletionContributor() {
                 when (owner) {
                     is Impl -> {
                         val name = owner.impl.typeReference!!.type.shortPresentableText + "::" + it.name!!
-                        createLookupElement(it, name)
+                        listOf(createLookupElement(it, name))
                     }
-                    is Trait -> LookupElementDecorator.withRenderer(
-                        createLookupElement(it, it.name!!),
-                        object : Renderer() {
-                            override fun renderElement(element: LookupElementDecorator<LookupElement>?,
-                                                       presentation: LookupElementPresentation?) {
-                                element?.delegate?.renderElement(presentation)
-                                presentation?.appendTailText(" of ${owner.trait.name}", true)
+                    // TODO: fix, doesn't work
+                    is Trait -> {
+                        println("TRAIT $it $owner")
+                        println(owner.trait.name)
+                        println(owner.trait.searchForImplementations().count()) // why zero???
+                        println(owner.trait.members?.text)
+                        (owner.trait.searchForImplementations()
+                            .findAll()
+                            .toList()
+                            .nullize() ?: TODO(""))
+                            .map { println(it.declaredType.shortPresentableText); it}
+                            .toList()
+                            .map { it.declaredType.shortPresentableText }
+                            .map { type ->
+                                LookupElementDecorator.withRenderer(
+                                    createLookupElement(it, "$type::${it.name!!}"),
+                                    object : Renderer() {
+                                        override fun renderElement(element: LookupElementDecorator<LookupElement>?,
+                                                                   presentation: LookupElementPresentation?) {
+                                            element?.delegate?.renderElement(presentation)
+                                            presentation?.appendTailText(" of ${owner.trait.name}", true)
+                                        }
+                                    })
                             }
-                        }
-                    )
-                    else -> createLookupElement(it, it.name!!)
+                    }
+                    else -> listOf(createLookupElement(it, it.name!!))
                 }
-                // TODO: check if any struct from this file implement that trait
-            }
-            .map(WrapWithHandler())
+            }.flatten()
+            .map(::withCustomHandler)
             .forEach { variants += it }
 
         val index = RsImplIndex()
@@ -206,6 +222,7 @@ class RsSmartCompletionContributor : CompletionContributor() {
         val impls = index.getAllKeys(project).map {
             getElements(index.key, it, project, GlobalSearchScope.allScope(project))
         }.flatten()
+
 
 
         return variants
@@ -235,22 +252,20 @@ class RsSmartCompletionContributor : CompletionContributor() {
     /**
      * Add custom handler
      */
-    private class WrapWithHandler() : (LookupElement) -> LookupElement {
-        override fun invoke(element: LookupElement): LookupElement {
-            val el = element.psiElement
-            return when (el) {
-                is RsStructItem -> {
-                    LookupElementDecorator.withInsertHandler(element, StructHandler(el))
-                }
-                is RsFunction -> {
-                    if (el.isAssocFn) {
-                        LookupElementDecorator.withInsertHandler(element, AssocFunctionHandler(el))
-                    } else {
-                        element
-                    }
-                }
-                else -> element
+    private fun withCustomHandler(element: LookupElement): LookupElement {
+        val el = element.psiElement
+        return when (el) {
+            is RsStructItem -> {
+                LookupElementDecorator.withInsertHandler(element, StructHandler(el))
             }
+            is RsFunction -> {
+                if (el.isAssocFn) {
+                    LookupElementDecorator.withInsertHandler(element, AssocFunctionHandler(el))
+                } else {
+                    element
+                }
+            }
+            else -> element
         }
     }
 }

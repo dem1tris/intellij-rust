@@ -3,6 +3,8 @@
  * found in the LICENSE file.
  */
 
+@file:Suppress("UNUSED_PARAMETER", "UNUSED_VARIABLE")
+
 package org.rust.lang.core.completion
 
 import com.intellij.codeInsight.AutoPopupController
@@ -16,7 +18,6 @@ import com.intellij.openapi.editor.EditorModificationUtil
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.TokenType
-import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
 import one.util.streamex.StreamEx
@@ -29,7 +30,6 @@ import org.rust.lang.core.psi.ext.RsAbstractableOwner.Impl
 import org.rust.lang.core.psi.ext.RsAbstractableOwner.Trait
 import org.rust.lang.core.resolve.ImplLookup
 import org.rust.lang.core.resolve.collectCompletionVariants
-import org.rust.lang.core.resolve.indexes.RsImplIndex
 import org.rust.lang.core.resolve.processMethodCallExprResolveVariants
 import org.rust.lang.core.resolve.processPathResolveVariants
 import org.rust.lang.core.types.ty.Ty
@@ -37,7 +37,6 @@ import org.rust.lang.core.types.ty.TyAdt
 import org.rust.lang.core.types.ty.TyBool
 import org.rust.lang.core.types.ty.TyFunction
 import org.rust.lang.core.types.type
-import org.rust.openapiext.getElements
 
 typealias Renderer = LookupElementRenderer<LookupElementDecorator<LookupElement>?>
 
@@ -160,12 +159,12 @@ class RsSmartCompletionContributor : CompletionContributor() {
             }, Filter(typeSet)).map(::withCustomHandler)
         ProgressManager.checkCanceled()
 
-        typeSet.forEach { ty ->
+        /*typeSet.forEach { ty ->
             variants += collectCompletionVariants({
                 processMethodCallExprResolveVariants(ImplLookup.relativeTo(path), ty, it)
             }, Filter(typeSet)).map(::withCustomHandler)
         }
-        ProgressManager.checkCanceled()
+        ProgressManager.checkCanceled()*/
 
         StreamEx
             .ofTree(path.containingFile as PsiElement) { el -> StreamEx.of(*el.children) }
@@ -255,8 +254,7 @@ class RsSmartCompletionContributor : CompletionContributor() {
 class AssocFunctionHandler(val function: RsFunction) : InsertHandler<LookupElement?> {
     override fun handleInsert(context: InsertionContext, item: LookupElement?) {
         val offset = context.editor.caretModel.offset
-        val pathExpr = context.file.findElementAt(offset)
-            ?.prevSibling as? RsPathExpr ?: return
+        context.file.findElementAt(offset)?.prevSibling as? RsPathExpr ?: return
         if (!context.nextCharIs('(')) {
             context.document.insertString(context.selectionEndOffset, "()")
         }
@@ -264,7 +262,6 @@ class AssocFunctionHandler(val function: RsFunction) : InsertHandler<LookupEleme
         if (!function.valueParameters.isEmpty()) {
             AutoPopupController.getInstance(function.project)?.autoPopupParameterInfo(context.editor, function)
         }
-
     }
 }
 
@@ -276,7 +273,7 @@ class StructHandler(val struct: RsStructItem) : InsertHandler<LookupElement?> {
     override fun handleInsert(context: InsertionContext, item: LookupElement?) {
         val factory = RsPsiFactory(context.project)
         val offset = context.editor.caretModel.offset
-        // `S` as RsPathExpr
+        // `StructName` as RsPathExpr
         val pathExpr = context.file.findElementAt(offset)
             ?.prevSibling as? RsPathExpr ?: return
         val declaredFields = struct.namedFields
@@ -287,7 +284,7 @@ class StructHandler(val struct: RsStructItem) : InsertHandler<LookupElement?> {
             pathExpr.parent.addAfter(factory.createWhitespace(" "), pathExpr)
         }
 
-        // RsStructLiteralBody in `S {  }`
+        // RsStructLiteralBody in `StructName {  }`
         val inserted = context.file.findElementAt(offset)
             ?.nextSibling as? RsStructLiteralBody ?: return
         declaredFields.map {

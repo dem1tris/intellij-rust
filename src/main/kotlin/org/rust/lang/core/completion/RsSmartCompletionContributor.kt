@@ -7,7 +7,10 @@ package org.rust.lang.core.completion
 
 import com.intellij.codeInsight.AutoPopupController
 import com.intellij.codeInsight.completion.*
-import com.intellij.codeInsight.lookup.*
+import com.intellij.codeInsight.lookup.LookupElement
+import com.intellij.codeInsight.lookup.LookupElementDecorator
+import com.intellij.codeInsight.lookup.LookupElementPresentation
+import com.intellij.codeInsight.lookup.LookupElementRenderer
 import com.intellij.lang.parameterInfo.ParameterInfoUtils
 import com.intellij.openapi.editor.EditorModificationUtil
 import com.intellij.openapi.progress.ProgressManager
@@ -16,7 +19,6 @@ import com.intellij.psi.TokenType
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.ProcessingContext
-import com.intellij.util.containers.nullize
 import one.util.streamex.StreamEx
 import org.rust.ide.formatter.impl.CommaList
 import org.rust.ide.formatter.processors.removeTrailingComma
@@ -28,7 +30,6 @@ import org.rust.lang.core.psi.ext.RsAbstractableOwner.Trait
 import org.rust.lang.core.resolve.ImplLookup
 import org.rust.lang.core.resolve.collectCompletionVariants
 import org.rust.lang.core.resolve.indexes.RsImplIndex
-import org.rust.lang.core.resolve.indexes.RsLangItemIndex
 import org.rust.lang.core.resolve.processMethodCallExprResolveVariants
 import org.rust.lang.core.resolve.processPathResolveVariants
 import org.rust.lang.core.types.ty.Ty
@@ -80,8 +81,8 @@ class RsSmartCompletionContributor : CompletionContributor() {
             function.valueParameters.filterIndexed { ind, _ ->
                 if (function.selfParameter == null) index == ind
                 else index == ind - 1
-            }.map {
-                it.typeReference?.type ?: TODO("NO TY")
+            }.mapNotNull {
+                it.typeReference?.type
             }.map {
                 typeSet.add(it)
             }
@@ -93,11 +94,9 @@ class RsSmartCompletionContributor : CompletionContributor() {
 
         val variants = getVariants(parameters, path, typeSet)
         variants.forEach { result.addElement(it) }
-        result.addElement(LookupElementBuilder.create("onVAL"))
     }
 
     private fun isReturnable(position: PsiElement): Boolean {
-        println("RsSmartCompletionContributor.isReturnable")
         val path = position.parent as? RsPath ?: return false
         val pexpr = path.parent as? RsPathExpr ?: return false
         val retExpr = pexpr.ancestorStrict<RsRetExpr>()
@@ -119,12 +118,10 @@ class RsSmartCompletionContributor : CompletionContributor() {
         val variants = getVariants(parameters, path, typeSet)
 
         variants.forEach { result.addElement(it) }
-        result.addElement(LookupElementBuilder.create("onReturnable"))
     }
 
 
     private fun isCondition(position: PsiElement): Boolean {
-        println("RsSmartCompletionContributor.isCondition")
         val path = position.parent as? RsPath ?: return false
         val pexpr = path.parent as? RsPathExpr ?: return false
         return pexpr.ancestorStrict<RsCondition>() != null
@@ -136,12 +133,9 @@ class RsSmartCompletionContributor : CompletionContributor() {
         val variants = getVariants(parameters, path, typeSet)
 
         variants.forEach { result.addElement(it) }
-        result.addElement(LookupElementBuilder.create("onCondition"))
-        println("RsSmartCompletionContributor.onCondition")
     }
 
     private fun isLet(position: PsiElement): Boolean {
-        println("RsSmartCompletionContributor.isLet")
         val path = position.parent as? RsPath ?: return false
         val pexpr = path.parent as? RsPathExpr ?: return false
         val letDecl = PsiTreeUtil.getParentOfType(pexpr, RsLetDecl::class.java, true,
@@ -156,8 +150,6 @@ class RsSmartCompletionContributor : CompletionContributor() {
         val letDecl = PsiTreeUtil.getParentOfType(pexpr, RsLetDecl::class.java, true,
             RsCondition::class.java) ?: return
         val typeSet = setOf<Ty>().toMutableSet()
-        result.addElement(LookupElementBuilder.create("onLet"))
-        val a = RsLangItemIndex
     }
 
     // TODO: need collect assoc functions from all impl blocks
@@ -188,15 +180,9 @@ class RsSmartCompletionContributor : CompletionContributor() {
                     }
                     // TODO: fix, doesn't work
                     is Trait -> {
-                        println("TRAIT $it $owner")
-                        println(owner.trait.name)
-                        println(owner.trait.searchForImplementations().count()) // why zero???
-                        println(owner.trait.members?.text)
-                        (owner.trait.searchForImplementations()
+                        println(owner.trait.searchForImplementations().count())
+                        owner.trait.searchForImplementations()
                             .findAll()
-                            .toList()
-                            .nullize() ?: TODO(""))
-                            .map { println(it.declaredType.shortPresentableText); it}
                             .toList()
                             .map { it.declaredType.shortPresentableText }
                             .map { type ->
@@ -216,14 +202,6 @@ class RsSmartCompletionContributor : CompletionContributor() {
             }.flatten()
             .map(::withCustomHandler)
             .forEach { variants += it }
-
-        val index = RsImplIndex()
-        val project = parameters.editor.project!!
-        val impls = index.getAllKeys(project).map {
-            getElements(index.key, it, project, GlobalSearchScope.allScope(project))
-        }.flatten()
-
-
 
         return variants
     }
@@ -301,7 +279,6 @@ class StructHandler(val struct: RsStructItem) : InsertHandler<LookupElement?> {
         // `S` as RsPathExpr
         val pathExpr = context.file.findElementAt(offset)
             ?.prevSibling as? RsPathExpr ?: return
-        println("pathExpr = ${pathExpr}")
         val declaredFields = struct.namedFields
         val forceMultiline = declaredFields.size > 2
         var firstAdded: RsStructLiteralField? = null

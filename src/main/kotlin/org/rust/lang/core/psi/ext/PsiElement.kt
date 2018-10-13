@@ -32,6 +32,9 @@ val PsiElement.ancestorPairs: Sequence<Pair<PsiElement, PsiElement>> get() {
 val PsiElement.leftLeaves: Sequence<PsiElement>
     get() = generateSequence(this, PsiTreeUtil::prevLeaf).drop(1)
 
+val PsiElement.rightLeaves: Sequence<PsiElement>
+    get() = generateSequence(this, PsiTreeUtil::nextLeaf).drop(1)
+
 val PsiElement.rightSiblings: Sequence<PsiElement>
     get() = generateSequence(this.nextSibling) { it.nextSibling }
 

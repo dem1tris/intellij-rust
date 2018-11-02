@@ -675,6 +675,8 @@
 
         <lang.namesValidator language="Rust" implementationClass="org.rust.lang.refactoring.RsNamesValidator"/>
 
+        <inlineActionHandler implementation="org.rust.lang.refactoring.RsInlineVariableHandler"/>
+
         <!-- Postfix templates -->
         <codeInsight.template.postfixTemplateProvider language="Rust"
                                                       implementationClass="org.rust.ide.template.postfix.RsPostfixTemplateProvider"/>

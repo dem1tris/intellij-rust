@@ -21,6 +21,17 @@ class RsInlineVariableHandlerTest : RsTestBase() {
         }
     """)
 
+    fun `test decl`() = doTest("""
+        fn main() {
+            let a/*caret*/ = 5;
+            let b = a;
+        }
+    """, """
+        fn main() {
+            let b = 5/*caret*/;
+        }
+    """)
+
     fun `test need parentheses`() = doTest("""
         fn main() {
             let a = 5 + 5;

@@ -28,7 +28,7 @@ class RsInlineVariableHandlerTest : RsTestBase() {
         }
     """, """
         fn main() {
-            let b = 5/*caret*/;
+            /*caret*/let b = 5;
         }
     """)
 

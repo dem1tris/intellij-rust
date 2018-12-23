@@ -33,11 +33,12 @@ class RsInlineVariableProcessor(
 ) : BaseRefactoringProcessor(project) {
     override fun findUsages(): Array<UsageInfo> {
         if (inlineThisOnly && reference != null) return arrayOf(UsageInfo(reference))
+        val pat = declaration.pat ?: return emptyArray()
         val usages = runReadAction {
             val searchScope = GlobalSearchScope.fileScope(declaration.containingFile)
-            ReferencesSearch.search(declaration.pat!!.firstChild, searchScope)
+            ReferencesSearch.search(pat.firstChild, searchScope)
         }
-        println(usages.collectionSizeOrDefault(777))
+        println("usages.collectionSizeOrDefault ${usages.collectionSizeOrDefault(777)}");
         return usages.map(::UsageInfo).toTypedArray()
     }
 
@@ -48,10 +49,11 @@ class RsInlineVariableProcessor(
             println("usages.size = ${usages.size}")
             usages.asIterable().forEach {
                 println(it.element?.text)
-                if (it.isValid) {
-                    print("valid")
+                if (it.isValid && (it.element?.isValid == true)) {
                     it.element?.replace(initializer.copy())
-                    //TODO: wrap binary expressions into parentheses
+                    //TODO: wrap binary expressions in parentheses
+                } else {
+                    println("invalid")
                 }
             }
             if (deleteDecl) {
@@ -60,7 +62,7 @@ class RsInlineVariableProcessor(
         }
     }
 
-    private val commandName = "Inlining variable ${DescriptiveNameUtil.getDescriptiveName(declaration)}"
+    private val commandName = "Inlining variable '${DescriptiveNameUtil.getDescriptiveName(declaration)}'"
 
     override fun getCommandName() = commandName
 

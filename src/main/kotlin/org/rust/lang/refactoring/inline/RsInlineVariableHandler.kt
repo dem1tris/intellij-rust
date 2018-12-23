@@ -15,7 +15,6 @@ import com.intellij.openapi.editor.colors.EditorColors
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.WindowManager
-import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiReference
 import com.intellij.psi.search.searches.ReferencesSearch
@@ -25,7 +24,6 @@ import com.intellij.refactoring.util.CommonRefactoringUtil
 import org.rust.lang.RsLanguage
 import org.rust.lang.core.psi.*
 import org.rust.lang.core.psi.ext.*
-import org.rust.openapiext.runWriteCommandAction
 
 class RsInlineVariableHandler : InlineActionHandler() {
     override fun inlineElement(project: Project, editor: Editor, element: PsiElement) {
@@ -35,19 +33,22 @@ class RsInlineVariableHandler : InlineActionHandler() {
         println("is RsElement")
 
         val decl = element.ancestorStrict<RsLetDecl>() ?: return
-        val name = decl.pat?.descendantOfTypeStrict<RsPatBinding>()?.identifier?.text ?: return
-        var reference = TargetElementUtil.findReference(editor, editor.caretModel.offset)
-        if (reference != null && decl.pat!!.isAncestorOf(reference.element)) {
-            reference = null
+        val pat = decl.pat ?: return
+        val name = pat.descendantOfTypeStrict<RsPatBinding>()?.identifier?.text ?: return
+        var underCaretRef = TargetElementUtil.findReference(editor, editor.caretModel.offset)
+        if (underCaretRef != null && pat.isAncestorOf(underCaretRef.element)) {
+            underCaretRef = null
         }
+
+        val references = ReferencesSearch.search(element).findAll()
+        val initializer = extractInitializer(project, editor, decl, references) ?: return
+        if (!initializer.isValid) return
+        val dialog = RsInlineVariableDialog(decl, underCaretRef, initializer.copy() as RsExpr) ?: return
 
         if (decl.descendantOfTypeStrict<RsPatTup>() != null) {
             return showErrorHint(project, editor,
                 "Cannot inline variable '$name' with tuple-unpacking assignment")
         }
-
-        val references = ReferencesSearch.search(element).findAll()
-        val initializer = extractInitializer(project, editor, decl, references) ?: return
 
         if (references.count() == 0) {
             return showErrorHint(project, editor, "Variable '$name' is never used")
@@ -58,7 +59,6 @@ class RsInlineVariableHandler : InlineActionHandler() {
             .map { it.element }
         highlightElements(project, editor, refsInOriginalFile)
 
-        val dialog = RsInlineVariableDialog(decl, reference, initializer)
         if (/*withPrompt && */!ApplicationManager.getApplication().isUnitTestMode && dialog.shouldBeShown()) {
             dialog.show()
             if (!dialog.isOK /*&& hasHighlightings*/) {
@@ -67,6 +67,7 @@ class RsInlineVariableHandler : InlineActionHandler() {
             }
         } else {
             dialog.doAction()
+            //TODO: remember last chosed option
         }
     }
 
@@ -83,15 +84,15 @@ class RsInlineVariableHandler : InlineActionHandler() {
                 val expr = it.element.ancestorOrSelf<RsBinaryExpr>()
                 // maybe the strict ancestor shouldn't be here, if we forbid tuples on lhs
                 expr?.left?.isAncestorOf(it.element) == true && expr.isAssignBinaryExpr
-            }.map { it.element.ancestorOrSelf<RsBinaryExpr>() }
+            }.mapNotNull { it.element.ancestorOrSelf<RsBinaryExpr>() }
 
         return when {
             declInitializer != null && writeUsages.isNotEmpty()
                 || declInitializer == null && writeUsages.singleOrNull() == null -> {
-                reportAmbiguousAssignment(project, editor, name, writeUsages.map { it!!.left }) //.left or what?
+                reportAmbiguousAssignment(project, editor, name, writeUsages.map { it.left }) // TODO: .left or what?
                 null;
             }
-            declInitializer == null -> writeUsages.single()?.right
+            declInitializer == null -> writeUsages.single().right
             else -> declInitializer
         }
     }
@@ -131,7 +132,13 @@ class RsInlineVariableHandler : InlineActionHandler() {
         val editorColorsManager = EditorColorsManager.getInstance()
         val searchResultsAttributes = editorColorsManager.globalScheme.getAttributes(EditorColors.SEARCH_RESULT_ATTRIBUTES)
         val highlightManager = HighlightManager.getInstance(project)
-        highlightManager.addOccurrenceHighlights(editor, elements.toTypedArray(), searchResultsAttributes, true, null)
+        highlightManager.addOccurrenceHighlights(
+            editor,
+            elements.toTypedArray(),
+            searchResultsAttributes,
+            true,
+            null
+        )
     }
 
 }

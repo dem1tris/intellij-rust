@@ -19,17 +19,26 @@ import org.rust.lang.core.psi.ext.RsNameIdentifierOwner
 import org.rust.lang.core.psi.ext.RsNamedElement
 import org.rust.lang.core.psi.ext.descendantOfTypeStrict
 
-class RsInlineVariableDialog(
+class RsInlineVariableDialog private constructor(
     private val decl: RsLetDecl,
     private val reference: PsiReference?,
+    private val occurrencesNumber: Int,
     private val initializer: RsExpr,
     project: Project = decl.project
 ) : InlineOptionsDialog(project, true, decl) {
+
+    companion object {
+        operator fun invoke(decl: RsLetDecl, reference: PsiReference?, initializer: RsExpr) : RsInlineVariableDialog? {
+            val pat = decl.pat ?: return null
+            // TODO: perform possible -1 (too expensive to count)
+            val occurrencesNumber = initOccurrencesNumber(pat.descendantOfTypeStrict<RsNameIdentifierOwner>());
+            return RsInlineVariableDialog(decl, reference, occurrencesNumber, initializer)
+        }
+    }
+
     override fun getBorderTitle(): String = RefactoringBundle.message("inline.variable.title")
 
     fun shouldBeShown() = EditorSettingsExternalizable.getInstance().isShowInlineLocalDialog
-
-    private fun getInlineText(verb: String) = "Inline all references and $verb the variable"
 
     public override fun doAction() {
         invokeRefactoring(RsInlineVariableProcessor(
@@ -41,17 +50,13 @@ class RsInlineVariableDialog(
             deleteDecl = !isInlineThisOnly && !isKeepTheDeclaration))
     }
 
-    // better to use !!, then get NPE much deeper, isn't it?
-    // TODO: perform possible -1 (too expensive to count)
-    private val occurrencesNumber = initOccurrencesNumber(decl.pat!!.descendantOfTypeStrict<RsNameIdentifierOwner>());
-
     override fun getNameLabelText(): String {
         val occurrencesString = if (occurrencesNumber >= 0)
-            "$occurrencesNumber ${StringUtil.pluralize("occurrence", occurrencesNumber)}"
+            "- $occurrencesNumber ${StringUtil.pluralize("occurrence", occurrencesNumber)}"
         else
             ""
         val name = decl.pat?.descendantOfTypeStrict<RsNamedElement>()?.name ?: "<unnamed>"
-        return "Variable '$name' - $occurrencesString"
+        return "Variable '$name' $occurrencesString"
     }
 
     override fun isInlineThis() = JavaRefactoringSettings.getInstance().INLINE_LOCAL_THIS
@@ -68,7 +73,6 @@ class RsInlineVariableDialog(
         }
 
 
-    // TODO: why remove decl is inactive when single ref
     init {
         title = borderTitle
         myInvokedOnReference = reference != null
@@ -89,4 +93,6 @@ class RsInlineVariableDialog(
         })
         init()
     }
+
+    private fun getInlineText(verb: String) = "Inline all references and $verb the variable"
 }

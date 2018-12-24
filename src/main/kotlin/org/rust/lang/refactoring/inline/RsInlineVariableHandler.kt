@@ -18,7 +18,6 @@ import com.intellij.openapi.wm.WindowManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiReference
 import com.intellij.psi.search.searches.ReferencesSearch
-import com.intellij.refactoring.HelpID
 import com.intellij.refactoring.RefactoringBundle
 import com.intellij.refactoring.util.CommonRefactoringUtil
 import org.rust.lang.RsLanguage
@@ -32,22 +31,20 @@ class RsInlineVariableHandler : InlineActionHandler() {
         if (element !is RsElement) return;
         println("is RsElement")
 
-        val decl = element.ancestorStrict<RsLetDecl>() ?: return
-        val pat = decl.pat ?: return
+        val declaration = element.ancestorStrict<RsLetDecl>() ?: return
+        val pat = element.ancestorOrSelf<RsPat>() ?: return
         val name = pat.descendantOfTypeStrict<RsPatBinding>()?.identifier?.text ?: return
-        var underCaretRef = TargetElementUtil.findReference(editor, editor.caretModel.offset)
-        if (underCaretRef != null && pat.isAncestorOf(underCaretRef.element)) {
-            underCaretRef = null
-        }
+        val underCaretRef = TargetElementUtil.findReference(editor, editor.caretModel.offset) ?: return
 
         val references = ReferencesSearch.search(element).findAll()
-        val initializer = extractInitializer(project, editor, decl, references) ?: return
+        val initializer = extractInitializer(project, editor, declaration, references) ?: return
         if (!initializer.isValid) return
-        val dialog = RsInlineVariableDialog(decl, underCaretRef, initializer.copy() as RsExpr) ?: return
+        val dialog =
+            RsInlineVariableDialog(declaration, element, underCaretRef, initializer) ?: return
 
-        if (decl.descendantOfTypeStrict<RsPatTup>() != null) {
+        if (declaration.descendantOfTypeStrict<RsPatTup>() != null && initializer !is RsTupleExpr) {
             return showErrorHint(project, editor,
-                "Cannot inline variable '$name' with tuple-unpacking assignment")
+                "Cannot extract initializer for variable '$name' with tuple-unpacking assignment")
         }
 
         if (references.count() == 0) {
@@ -55,14 +52,14 @@ class RsInlineVariableHandler : InlineActionHandler() {
         }
 
         val refsInOriginalFile = references
-            .filter { it.element.containingFile == decl.containingFile }
+            .filter { it.element.containingFile == declaration.containingFile }
             .map { it.element }
         highlightElements(project, editor, refsInOriginalFile)
 
         if (/*withPrompt && */!ApplicationManager.getApplication().isUnitTestMode && dialog.shouldBeShown()) {
             dialog.show()
             if (!dialog.isOK /*&& hasHighlightings*/) {
-                val statusBar = WindowManager.getInstance().getStatusBar(decl.project)
+                val statusBar = WindowManager.getInstance().getStatusBar(declaration.project)
                 statusBar?.info = RefactoringBundle.message("press.escape.to.remove.the.highlighting")
             }
         } else {
@@ -107,7 +104,7 @@ class RsInlineVariableHandler : InlineActionHandler() {
             editor,
             message,
             RefactoringBundle.message("inline.variable.title"),
-            HelpID.INLINE_VARIABLE
+            "refactoring.inlineVariable"
         )
     }
 

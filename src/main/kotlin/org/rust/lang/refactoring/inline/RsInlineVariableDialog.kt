@@ -9,30 +9,40 @@ import com.intellij.openapi.editor.ex.EditorSettingsExternalizable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.util.text.StringUtil
+import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiReference
-import com.intellij.refactoring.JavaRefactoringSettings
 import com.intellij.refactoring.RefactoringBundle
 import com.intellij.refactoring.inline.InlineOptionsDialog
 import org.rust.lang.core.psi.RsExpr
 import org.rust.lang.core.psi.RsLetDecl
-import org.rust.lang.core.psi.ext.RsNameIdentifierOwner
-import org.rust.lang.core.psi.ext.RsNamedElement
-import org.rust.lang.core.psi.ext.descendantOfTypeStrict
+import org.rust.lang.core.psi.RsPat
+import org.rust.lang.core.psi.ext.*
 
 class RsInlineVariableDialog private constructor(
     private val decl: RsLetDecl,
-    private val reference: PsiReference?,
+    private val declaredElement: PsiElement,
+    private val elementPat: RsPat,
+    private val reference: PsiReference,
     private val occurrencesNumber: Int,
     private val initializer: RsExpr,
     project: Project = decl.project
 ) : InlineOptionsDialog(project, true, decl) {
 
     companion object {
-        operator fun invoke(decl: RsLetDecl, reference: PsiReference?, initializer: RsExpr) : RsInlineVariableDialog? {
-            val pat = decl.pat ?: return null
-            // TODO: perform possible -1 (too expensive to count)
-            val occurrencesNumber = initOccurrencesNumber(pat.descendantOfTypeStrict<RsNameIdentifierOwner>());
-            return RsInlineVariableDialog(decl, reference, occurrencesNumber, initializer)
+        operator fun invoke(decl: RsLetDecl,
+                            declaredElement: PsiElement,
+                            reference: PsiReference,
+                            initializer: RsExpr): RsInlineVariableDialog? {
+            val pat = declaredElement.ancestorOrSelf<RsPat>() ?: return null
+            val occurrencesNumber = initOccurrencesNumber(pat.descendantOfTypeStrict<RsNameIdentifierOwner>())
+            return RsInlineVariableDialog(
+                decl,
+                declaredElement,
+                pat,
+                reference,
+                occurrencesNumber,
+                initializer
+            )
         }
     }
 
@@ -44,6 +54,8 @@ class RsInlineVariableDialog private constructor(
         invokeRefactoring(RsInlineVariableProcessor(
             project,
             decl,
+            declaredElement,
+            elementPat,
             reference,
             initializer,
             inlineThisOnly = isInlineThisOnly,
@@ -55,15 +67,17 @@ class RsInlineVariableDialog private constructor(
             "- $occurrencesNumber ${StringUtil.pluralize("occurrence", occurrencesNumber)}"
         else
             ""
-        val name = decl.pat?.descendantOfTypeStrict<RsNamedElement>()?.name ?: "<unnamed>"
+        val name = elementPat.descendantOfTypeStrict<RsNamedElement>()?.name ?: "<unnamed>"
         return "Variable '$name' $occurrencesString"
     }
 
-    override fun isInlineThis() = JavaRefactoringSettings.getInstance().INLINE_LOCAL_THIS
+    //override fun isInlineThis() = JavaRefactoringSettings.getInstance().INLINE_LOCAL_THIS
+    override fun isInlineThis() = false
 
     override fun getInlineAllText() = getInlineText("remove")
 
-    override fun getInlineThisText() = "Inline this reference and keep the variable"
+    //override fun getInlineThisText() = "Inline this reference and keep the variable"
+    override fun getInlineThisText(): String = RefactoringBundle.message("this.reference.only.and.keep.the.variable")
 
     override fun getKeepTheDeclarationText() =
         if (occurrencesNumber == 1 && myInvokedOnReference) {
@@ -75,7 +89,7 @@ class RsInlineVariableDialog private constructor(
 
     init {
         title = borderTitle
-        myInvokedOnReference = reference != null
+        myInvokedOnReference = !elementPat.isAncestorOf(reference.element)
         println("myInvokedOnReference = $myInvokedOnReference")
         setPreviewResults(true) //TODO
         setDoNotAskOption(object : DialogWrapper.DoNotAskOption {
